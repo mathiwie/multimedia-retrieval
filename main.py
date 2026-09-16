@@ -1,7 +1,8 @@
 import open3d as o3d
 import numpy as np
 
-mesh_path = "/Users/jananjahed/Desktop/MM/multimedia-retrieval/ShapeDatabase_INFOMR/AquaticAnimal/m58.obj"
+# change to your own path 
+mesh_path = "/Users/jananjahed/Desktop/MM/multimedia-retrieval/ShapeDatabase_INFOMR/AquaticAnimal/m59.obj"
 
 # Load the mesh with open3d
 mesh = o3d.io.read_triangle_mesh(mesh_path)
@@ -16,7 +17,8 @@ print(vertices.shape[0])
 print(triangles.shape[0])
 
 # Visualize the mesh
-vis_option = "smoothshade"
+# changed this from smoothshade to wireframe_on_shaded to see the change 
+vis_option = "wireframe_on_shaded"
 if vis_option == "smoothshade":
     o3d.visualization.draw_geometries([mesh], width=1280, height=720)
 elif vis_option == "wireframe_on_shaded":
