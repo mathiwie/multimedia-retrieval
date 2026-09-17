@@ -11,6 +11,7 @@ resampled_dir = os.path.join(out_dir, "resampled")
 stats_csv = os.path.join(out_dir, "shape_stats.csv")
 stats_csv_after = os.path.join(out_dir, "shape_stats_after_resample.csv")
 normalised_dir = os.path.join(out_dir, "normalised")
+average_outliers_csv = os.path.join(out_dir, "average_and_outliers.csv")
 small_thresh = 100
 big_thresh = 50000
 target_verts = 7500
@@ -152,6 +153,31 @@ def print_stats_summary(df):
     print("----------------\n")
 
 
+def find_average_and_outliers(df, n=3, lo=small_thresh, hi=big_thresh):
+    """
+    average shape = the one closest to the mean vertex AND face count
+    (each measured in std units so both counts weigh the same).
+    outliers = poorly sampled shapes, using the same thresholds as 2.3:
+    under lo or over hi verts/faces. returns the average shape plus the
+    n smallest and n largest outliers, and how many outliers there are total
+    """
+    dv = (df["num_verts"] - df["num_verts"].mean()) / df["num_verts"].std()
+    dfc = (df["num_faces"] - df["num_faces"].mean()) / df["num_faces"].std()
+    average = df.loc[[(dv ** 2 + dfc ** 2).idxmin()]]
+    small = df[(df["num_verts"] < lo) | (df["num_faces"] < lo)]
+    big = df[(df["num_verts"] > hi) | (df["num_faces"] > hi)]
+    picked = pd.concat([
+        average.assign(kind="average"),
+        small.nsmallest(n, "num_verts").assign(kind="small outlier"),
+        big.nlargest(n, "num_verts").assign(kind="big outlier"),
+    ])
+    print(f"average shape: {average['path'].iloc[0]} "
+          f"({average['num_verts'].iloc[0]}v / {average['num_faces'].iloc[0]}f)")
+    print(f"small outliers (<{lo} verts or faces): {len(small)}")
+    print(f"big outliers (>{hi} verts or faces): {len(big)}")
+    return picked
+
+
 # 2.3: fixing outliers
 def refine_mesh(mesh, target=target_verts):
     """
@@ -281,6 +307,8 @@ if __name__ == "__main__":
     print_stats_summary(stats)
     make_histograms(stats, label="before")
     make_class_histogram(stats, label="before")
+    picked = find_average_and_outliers(stats)
+    save_stats(picked, average_outliers_csv)
     # 2.3
     print("fixing outliers...")
     fix_outliers(stats, db_path, resampled_dir)
