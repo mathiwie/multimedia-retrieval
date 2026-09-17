@@ -1,2 +1,8 @@
 .venv/
+
+# python cache, created when the viewer scripts import preprocessing.py
 __pycache__/
+*.pyc
+
+# macOS folder metadata
+.DS_Store

@@ -12,9 +12,13 @@ stats_csv = os.path.join(out_dir, "shape_stats.csv")
 stats_csv_after = os.path.join(out_dir, "shape_stats_after_resample.csv")
 normalised_dir = os.path.join(out_dir, "normalised")
 average_outliers_csv = os.path.join(out_dir, "average_and_outliers.csv")
+normalisation_csv = os.path.join(out_dir, "normalisation_check.csv")
 small_thresh = 100
 big_thresh = 50000
 target_verts = 7500
+# 2.3 resamples every shape into this vertex range (assignment: ~5K..10K)
+target_min = 5000
+target_max = 10000
 
 
 def get_face_type(path):
@@ -179,57 +183,120 @@ def find_average_and_outliers(df, n=3, lo=small_thresh, hi=big_thresh):
 
 
 # 2.3: fixing outliers
-def refine_mesh(mesh, target=target_verts):
+def clean_mesh(mesh):
     """
-    for meshes that are too coarse, splits every triangle into 4 by
-    adding midpoints on each edge (subdivide_midpoint). each pass roughly
-    4x's the vertex count so just loop till we're close to target, capped
-    at 6 passes.
+    lots of shapes have the same triangle stored several times (e.g. Bus/D00084
+    has 75870 faces but only 25240 unique ones). duplicates stop the decimation
+    from collapsing anything and get subdivided too, so remove them first,
+    together with duplicate/unused vertices and zero-area triangles.
+    vertices that are only a tiny float error apart also count as duplicates,
+    otherwise they get merged when the obj is saved and loaded again and the
+    vertex count on disk doesn't match (e.g. RectangleTable/m871 5191v -> 4014v)
     """
-    n = np.asarray(mesh.vertices).shape[0]
-    count = 0
-    while n < target and count < 6:
-        mesh = mesh.subdivide_midpoint(number_of_iterations=1)
-        n = np.asarray(mesh.vertices).shape[0]
-        count += 1
+    if num_verts(mesh) > 0:
+        extent = np.max(mesh.get_max_bound() - mesh.get_min_bound())
+        mesh.merge_close_vertices(extent * 1e-6)
+    mesh.remove_duplicated_vertices()
+    mesh.remove_duplicated_triangles()
+    mesh.remove_degenerate_triangles()
+    mesh.remove_unreferenced_vertices()
     return mesh
 
 
-def simplify_mesh(mesh, target=target_verts):
-    """
-    for meshes that are too dense. open3d's decimation function wants a
-    target triangle count not vertex count so converting using
-    the rough euler characteristic relation 
-    """
-    target_tris = max(int(target * 2), 4)
-    return mesh.simplify_quadric_decimation(target_number_of_triangles=target_tris)
+def num_verts(mesh):
+    return np.asarray(mesh.vertices).shape[0]
 
 
-def fix_outliers(df, root, dest, lo=small_thresh, hi=big_thresh):
+def search_in_range(simplify, p_min, p_max, target=target_verts, lo=target_min, hi=target_max, iters=12):
     """
-    loops through everything in df, refines/simplifies whatever is out of
-    range and writes the whole db to dest with the same folder
-    layout so walk_shapes still works on it after
+    bisection over a simplification parameter p (where a bigger p keeps more
+    vertices) until the cleaned result has between lo and hi verts. returns
+    the result closest to target if the range can't be hit
+    """
+    best = None
+    for _ in range(iters):
+        p = (p_min + p_max) / 2
+        result = clean_mesh(simplify(p))
+        n = num_verts(result)
+        if best is None or abs(n - target) < abs(num_verts(best) - target):
+            best = result
+        if lo <= n <= hi:
+            return result
+        if n > hi:
+            p_max = p
+        else:
+            p_min = p
+    return best
+
+
+def simplify_mesh(mesh, target=target_verts, lo=target_min, hi=target_max):
+    """
+    for meshes that are too dense. open3d's decimation wants a target triangle
+    count, not a vertex count. for a closed mesh faces ~ 2 * verts, so try that
+    first. open or messy meshes don't follow that (e.g. Tree/D00765 has as many
+    verts as faces), so if it misses, bisect over the triangle target.
+    some meshes are so messy (way more faces than verts, e.g. Vase/m541) that
+    quadric decimation can't collapse anything at all, for those fall back to
+    vertex clustering and bisect over the voxel size instead
+    """
+    # decimation leaves the collapsed vertices behind, clean so they aren't counted
+    decimate = lambda tris: mesh.simplify_quadric_decimation(target_number_of_triangles=max(int(tris), 4))
+    simplified = clean_mesh(decimate(target * 2))
+    if lo <= num_verts(simplified) <= hi:
+        return simplified
+    simplified = search_in_range(decimate, 4, np.asarray(mesh.triangles).shape[0], target, lo, hi)
+    if num_verts(simplified) <= hi:
+        return simplified
+    print(f"  quadric decimation stuck at {num_verts(simplified)}v, using vertex clustering")
+    extent = np.max(mesh.get_max_bound() - mesh.get_min_bound())
+    cluster = lambda divisions: mesh.simplify_vertex_clustering(voxel_size=extent / divisions)
+    return search_in_range(cluster, 10, 1000, target, lo, hi)
+
+
+def refine_mesh(mesh, target=target_verts, lo=target_min, hi=target_max):
+    """
+    for meshes that are too coarse, splits every triangle into 4 by adding
+    midpoints on each edge (subdivide_midpoint), so the shape itself doesn't
+    change. each pass ~4x's the size, so keep going till we're above lo
+    (capped at 8 passes) and if that overshot hi, simplify back down to target.
+    subdividing leaves duplicate midpoint vertices behind (they got merged when
+    saving, e.g. RectangleTable/m871 5240v in memory but 4014v on disk),
+    so clean after every pass
+    """
+    count = 0
+    while num_verts(mesh) < lo and count < 8:
+        mesh = clean_mesh(mesh.subdivide_midpoint(number_of_iterations=1))
+        count += 1
+    if num_verts(mesh) > hi:
+        mesh = simplify_mesh(mesh, target, lo, hi)
+    return mesh
+
+
+def fix_outliers(df, root, dest, lo=target_min, hi=target_max):
+    """
+    loops through everything in df, cleans every mesh, then refines whatever
+    has under lo verts and simplifies whatever has over hi verts, so the
+    whole db ends up around lo..hi. writes everything to dest with the
+    same folder layout so walk_shapes still works on it after
     """
     os.makedirs(dest, exist_ok=True)
     for _, row in df.iterrows():
         path = row["path"]
         cls = row["class"]
-        nv = row["num_verts"]
-        nf = row["num_faces"]
         try:
-            if nv == 0:
+            if row["num_verts"] == 0:
                 print(f"skipping {path} (empty mesh, 0 verts)")
                 continue
-            mesh = o3d.io.read_triangle_mesh(path)
-            too_small = nv < lo or nf < lo
-            too_big = nv > hi or nf > hi
-            if too_small:
-                print(f"refining {path} ({nv}v / {nf}f, too small)")
+            mesh = clean_mesh(o3d.io.read_triangle_mesh(path))
+            nv = num_verts(mesh)
+            nf = np.asarray(mesh.triangles).shape[0]
+            if nv < lo:
                 mesh = refine_mesh(mesh)
-            elif too_big:
-                print(f"simplifying {path} ({nv}v / {nf}f, too big)")
+            elif nv > hi:
                 mesh = simplify_mesh(mesh)
+            new_nv = num_verts(mesh)
+            if not lo <= new_nv <= hi:
+                print(f"out of range after resampling: {path} ({nv}v / {nf}f -> {new_nv}v)")
             cls_dir = os.path.join(dest, cls)
             os.makedirs(cls_dir, exist_ok=True)
             out_path = os.path.join(cls_dir, os.path.basename(path))
@@ -277,7 +344,8 @@ def normalise_all(root, dest):
 def check_normalisation(root):
     """
     reloads the normalised db and checks barycenter ~ (0,0,0) and
-    longest bbox side <= 1 for everything
+    longest bbox side ~ 1 for everything. saves the numbers to a csv and
+    histograms of both, so we can show normalisation worked for all shapes
     """
     rows = []
     for path, cls in walk_shapes(root):
@@ -290,12 +358,41 @@ def check_normalisation(root):
         size = bbox.get_max_bound() - bbox.get_min_bound()
         rows.append({
             "path": path,
+            "class": cls,
             "cx": center[0], "cy": center[1], "cz": center[2],
+            "barycenter_dist": np.linalg.norm(center),
             "longest_side": np.max(size),
         })
     df = pd.DataFrame(rows)
     print(df.describe())
+    save_stats(df, normalisation_csv)
+    make_normalisation_histograms(df)
     return df
+
+
+def make_normalisation_histograms(df):
+    """
+    histograms of the barycenter distance and longest bbox side after
+    normalising. the x axes are fixed to a sensible range around the expected
+    value (0 and 1), otherwise matplotlib zooms in on the float rounding
+    noise (~1e-7) and it looks like the shapes are spread out when they aren't
+    """
+    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+    ax[0].hist(df["barycenter_dist"], bins=50, range=(0, 0.05), color="steelblue", edgecolor="black")
+    ax[0].set_title("barycenter distance to origin (normalised)")
+    ax[0].set_xlabel("distance (unit cube side = 1)")
+    ax[0].set_ylabel("# shapes")
+    ax[1].hist(df["longest_side"], bins=51, range=(0.9, 1.1), color="indianred", edgecolor="black")
+    ax[1].set_title("longest bounding box side (normalised)")
+    ax[1].set_xlabel("length")
+    ax[1].set_ylabel("# shapes")
+    for a in ax:
+        a.ticklabel_format(axis="x", useOffset=False)
+    plt.tight_layout()
+    fname = os.path.join(out_dir, "histograms_normalised.png")
+    plt.savefig(fname, dpi=150)
+    plt.close(fig)
+    print("saved histogram to", fname)
 
 
 if __name__ == "__main__":
