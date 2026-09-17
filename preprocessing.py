@@ -306,18 +306,56 @@ def fix_outliers(df, root, dest, lo=target_min, hi=target_max):
     print("done resampling:", dest)
 
 
-# 2.5: normalising
-def normalise_mesh(mesh):
+# 2.5 + 3.1: normalising (translate, align, flip, scale)
+def principal_axes(verts):
     """
-    move barycenter to origin, then scale so it fits in a unit cube.
-    barycenter = mean of vertex positions
+    eigenvectors of the covariance matrix of the vertex positions, as columns,
+    sorted from largest to smallest eigenvalue. also returns the eigenvalues
+    """
+    eigenvalues, eigenvectors = np.linalg.eigh(np.cov(verts.T))
+    order = np.argsort(eigenvalues)[::-1]
+    return eigenvalues[order], eigenvectors[:, order]
+
+
+def flip_moments(mesh):
+    """
+    moment test: for each axis, sum of sign(c) * c^2 over the triangle
+    centroids c. positive means most of the mass is on the positive side
     """
     verts = np.asarray(mesh.vertices)
-    center = verts.mean(axis=0)
-    mesh.translate(-center)
-    bbox = mesh.get_axis_aligned_bounding_box()
-    size = bbox.get_max_bound() - bbox.get_min_bound()
-    longest_side = np.max(size)
+    tris = np.asarray(mesh.triangles)
+    centroids = verts[tris].mean(axis=1)
+    return np.sum(np.sign(centroids) * centroids ** 2, axis=0)
+
+
+def normalise_mesh(mesh):
+    """
+    the 4-step normalisation from module 4:
+    1. translate: barycenter (mean of vertex positions) to the origin
+    2. align: rotate so the largest eigenvector of the covariance matrix lies
+       on x and the second largest on y (the smallest ends up on z)
+    3. flip: moment test, mirror every axis where most mass is on the negative side
+    4. scale: uniformly so the shape tightly fits in a unit cube
+    """
+    verts = np.asarray(mesh.vertices)
+    verts = verts - verts.mean(axis=0)
+
+    _, axes = principal_axes(verts)
+    # third axis as the cross product so it's a proper rotation, not a mirror
+    rotation = np.stack([axes[:, 0], axes[:, 1], np.cross(axes[:, 0], axes[:, 1])])
+    verts = verts @ rotation.T
+    mesh.vertices = o3d.utility.Vector3dVector(verts)
+
+    signs = np.where(flip_moments(mesh) < 0, -1.0, 1.0)
+    verts = verts * signs
+    mesh.vertices = o3d.utility.Vector3dVector(verts)
+    if np.prod(signs) < 0:
+        # an odd number of flips mirrors the shape, which turns the triangles
+        # inside out, so swap two corners of each triangle to fix the winding
+        tris = np.asarray(mesh.triangles)
+        mesh.triangles = o3d.utility.Vector3iVector(tris[:, [0, 2, 1]])
+
+    longest_side = np.max(verts.max(axis=0) - verts.min(axis=0))
     if longest_side > 0:
         mesh.scale(1.0 / longest_side, center=(0, 0, 0))
     return mesh
@@ -343,9 +381,10 @@ def normalise_all(root, dest):
 
 def check_normalisation(root):
     """
-    reloads the normalised db and checks barycenter ~ (0,0,0) and
-    longest bbox side ~ 1 for everything. saves the numbers to a csv and
-    histograms of both, so we can show normalisation worked for all shapes
+    reloads the normalised db and checks all 4 normalisation steps for every shape:
+    barycenter ~ (0,0,0), major/medium/minor eigenvector along x/y/z (|cos| ~ 1),
+    flip moments all >= 0 and longest bbox side ~ 1. saves the numbers to a
+    csv and histograms, so we can show normalisation worked for all shapes
     """
     rows = []
     for path, cls in walk_shapes(root):
@@ -354,17 +393,25 @@ def check_normalisation(root):
         if verts.shape[0] == 0:
             continue
         center = verts.mean(axis=0)
-        bbox = mesh.get_axis_aligned_bounding_box()
-        size = bbox.get_max_bound() - bbox.get_min_bound()
+        _, axes = principal_axes(verts)
+        moments = flip_moments(mesh)
+        size = verts.max(axis=0) - verts.min(axis=0)
         rows.append({
             "path": path,
             "class": cls,
             "cx": center[0], "cy": center[1], "cz": center[2],
             "barycenter_dist": np.linalg.norm(center),
+            # |cos| of the angle between each eigenvector and its axis, 1 = aligned
+            "major_x_cos": abs(axes[0, 0]),
+            "medium_y_cos": abs(axes[1, 1]),
+            "minor_z_cos": abs(axes[2, 2]),
+            "moment_x": moments[0], "moment_y": moments[1], "moment_z": moments[2],
             "longest_side": np.max(size),
         })
     df = pd.DataFrame(rows)
     print(df.describe())
+    negative = (df[["moment_x", "moment_y", "moment_z"]] < 0).any(axis=1).sum()
+    print("shapes with a negative flip moment:", negative)
     save_stats(df, normalisation_csv)
     make_normalisation_histograms(df)
     return df
@@ -372,21 +419,30 @@ def check_normalisation(root):
 
 def make_normalisation_histograms(df):
     """
-    histograms of the barycenter distance and longest bbox side after
-    normalising. the x axes are fixed to a sensible range around the expected
-    value (0 and 1), otherwise matplotlib zooms in on the float rounding
-    noise (~1e-7) and it looks like the shapes are spread out when they aren't
+    one histogram per normalisation step. the x axes are fixed to a sensible
+    range around the expected value, otherwise matplotlib zooms in on the
+    float rounding noise (~1e-7) and it looks like the shapes are spread out
+    when they aren't
     """
-    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+    fig, ax = plt.subplots(1, 4, figsize=(22, 5))
     ax[0].hist(df["barycenter_dist"], bins=50, range=(0, 0.05), color="steelblue", edgecolor="black")
-    ax[0].set_title("barycenter distance to origin (normalised)")
+    ax[0].set_title("1. translate: barycenter distance to origin")
     ax[0].set_xlabel("distance (unit cube side = 1)")
-    ax[0].set_ylabel("# shapes")
-    ax[1].hist(df["longest_side"], bins=51, range=(0.9, 1.1), color="indianred", edgecolor="black")
-    ax[1].set_title("longest bounding box side (normalised)")
-    ax[1].set_xlabel("length")
-    ax[1].set_ylabel("# shapes")
+    # |cos| can't go above 1, so end the range right at 1 (plus float slack)
+    # or rounding splits the fully aligned shapes over two bars
+    ax[1].hist(df["major_x_cos"], bins=50, range=(0, 1 + 1e-9), color="seagreen", edgecolor="black")
+    ax[1].set_title("2. align: |cos| major eigenvector vs x axis")
+    ax[1].set_xlabel("|cos angle| (1 = aligned)")
+    smallest_moment = df[["moment_x", "moment_y", "moment_z"]].min(axis=1)
+    ax[2].hist(smallest_moment, bins=50, color="darkorange", edgecolor="black")
+    ax[2].axvline(0, color="black", linestyle="--")
+    ax[2].set_title("3. flip: smallest moment over x, y, z")
+    ax[2].set_xlabel("moment (>= 0 = flipped correctly)")
+    ax[3].hist(df["longest_side"], bins=51, range=(0.9, 1.1), color="indianred", edgecolor="black")
+    ax[3].set_title("4. scale: longest bounding box side")
+    ax[3].set_xlabel("length")
     for a in ax:
+        a.set_ylabel("# shapes")
         a.ticklabel_format(axis="x", useOffset=False)
     plt.tight_layout()
     fname = os.path.join(out_dir, "histograms_normalised.png")
@@ -396,26 +452,31 @@ def make_normalisation_histograms(df):
 
 
 if __name__ == "__main__":
+    import sys
     os.makedirs(out_dir, exist_ok=True)
-    # 2.1 + 2.2
-    print("analyzing shapes...")
-    stats = make_stats_df(db_path)
-    save_stats(stats, stats_csv)
-    print_stats_summary(stats)
-    make_histograms(stats, label="before")
-    make_class_histogram(stats, label="before")
-    picked = find_average_and_outliers(stats)
-    save_stats(picked, average_outliers_csv)
-    # 2.3
-    print("fixing outliers...")
-    fix_outliers(stats, db_path, resampled_dir)
-    # 2.4
-    print("rechecking stats...")
-    stats2 = make_stats_df(resampled_dir)
-    save_stats(stats2, stats_csv_after)
-    print_stats_summary(stats2)
-    make_histograms(stats2, label="after")
-    # 2.5
+    # "python preprocessing.py normalise" only redoes the normalisation on the
+    # already resampled db, so we don't have to wait for 2.1-2.4 again
+    only_normalise = len(sys.argv) > 1 and sys.argv[1] == "normalise"
+    if not only_normalise:
+        # 2.1 + 2.2
+        print("analyzing shapes...")
+        stats = make_stats_df(db_path)
+        save_stats(stats, stats_csv)
+        print_stats_summary(stats)
+        make_histograms(stats, label="before")
+        make_class_histogram(stats, label="before")
+        picked = find_average_and_outliers(stats)
+        save_stats(picked, average_outliers_csv)
+        # 2.3
+        print("fixing outliers...")
+        fix_outliers(stats, db_path, resampled_dir)
+        # 2.4
+        print("rechecking stats...")
+        stats2 = make_stats_df(resampled_dir)
+        save_stats(stats2, stats_csv_after)
+        print_stats_summary(stats2)
+        make_histograms(stats2, label="after")
+    # 2.5 + 3.1
     print("normalising...")
     normalise_all(resampled_dir, normalised_dir)
     check_normalisation(normalised_dir)
