@@ -1,8 +1,18 @@
+import os
+import sys
 import open3d as o3d
 import numpy as np
 
-# change to your own path 
-mesh_path = "/Users/jananjahed/Desktop/MM/multimedia-retrieval/ShapeDatabase_INFOMR/AquaticAnimal/m59.obj"
+# path relative to the repo, so it works on any machine
+# pass a different mesh as an argument (for example): python main.py ShapeDatabase_INFOMR/Bird/m43.obj
+repo_dir = os.path.dirname(os.path.abspath(__file__))
+if len(sys.argv) > 1:
+    mesh_path = sys.argv[1]
+else:
+    mesh_path = os.path.join(repo_dir, "ShapeDatabase_INFOMR", "AquaticAnimal", "m59.obj")
+
+if not os.path.isfile(mesh_path):
+    sys.exit(f"mesh not found: {mesh_path}")
 
 # Load the mesh with open3d
 mesh = o3d.io.read_triangle_mesh(mesh_path)
