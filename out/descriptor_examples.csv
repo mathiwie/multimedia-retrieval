@@ -1,0 +1,15 @@
+descriptor,end,shape,value,class
+area,low,Tool/m1114,0.158782168850014,Tool
+area,high,Bookset/D01182,6.610557568199496,Bookset
+compactness,low,Drum/D00383,1.680429374863255,Drum
+compactness,high,BuildingNonResidential/m406,2836.475558345573,BuildingNonResidential
+rectangularity,low,Glasses/D00560,0.0104650040420693,Glasses
+rectangularity,high,Bottle/D00716,0.5152594441241678,Bottle
+diameter,low,Sword/m691,1.000000623622829,Sword
+diameter,high,DeskPhone/D00316,1.3169737642188075,DeskPhone
+convexity,low,Insect/D00788,0.0282570437137718,Insect
+convexity,high,Bookset/D01110,0.9040257291267246,Bookset
+eccentricity,low,Drum/D00383,1.4621244076300113,Drum
+eccentricity,high,City/D01101,957.304680316098,City
+shape_index,low,City/D01092,-0.15354650148316165,City
+shape_index,high,MilitaryVehicle/D00577,0.6984426229508198,MilitaryVehicle

@@ -218,8 +218,21 @@ def fix_outliers(df, root, dest, lo=target_min, hi=target_max):
             print("couldnt resample:", path, "-", e)
     print("done resampling:", dest)
 
-def principal_axes(verts):
-    eigenvalues, eigenvectors = np.linalg.eigh(np.cov(verts.T))
+def area_weighted_covariance(mesh):
+    verts = np.asarray(mesh.vertices)
+    tris = np.asarray(mesh.triangles)
+    a, b, c = verts[tris[:, 0]], verts[tris[:, 1]], verts[tris[:, 2]]
+    areas = np.linalg.norm(np.cross(b - a, c - a), axis=1) / 2
+    total = areas.sum()
+    if total == 0:
+        return np.cov(verts.T)
+    weights = areas / total
+    centroids = (a + b + c) / 3
+    offsets = centroids - (weights[:, None] * centroids).sum(axis=0)
+    return np.einsum("i,ij,ik->jk", weights, offsets, offsets)
+
+def principal_axes(mesh):
+    eigenvalues, eigenvectors = np.linalg.eigh(area_weighted_covariance(mesh))
     order = np.argsort(eigenvalues)[::-1]
     return eigenvalues[order], eigenvectors[:, order]
 
@@ -232,8 +245,9 @@ def flip_moments(mesh):
 def normalise_mesh(mesh):
     verts = np.asarray(mesh.vertices)
     verts = verts - verts.mean(axis=0)
+    mesh.vertices = o3d.utility.Vector3dVector(verts)
 
-    _, axes = principal_axes(verts)
+    _, axes = principal_axes(mesh)
     rotation = np.stack([axes[:, 0], axes[:, 1], np.cross(axes[:, 0], axes[:, 1])])
     verts = verts @ rotation.T
     mesh.vertices = o3d.utility.Vector3dVector(verts)
@@ -275,7 +289,7 @@ def check_normalisation(root):
         if verts.shape[0] == 0:
             continue
         center = verts.mean(axis=0)
-        _, axes = principal_axes(verts)
+        _, axes = principal_axes(mesh)
         moments = flip_moments(mesh)
         size = verts.max(axis=0) - verts.min(axis=0)
         rows.append({

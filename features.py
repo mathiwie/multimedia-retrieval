@@ -6,6 +6,7 @@ import open3d as o3d
 from preprocessing import out_dir, normalised_dir, walk_shapes, save_stats, principal_axes
 
 features_csv = os.path.join(out_dir, "features.csv")
+skipped_csv = os.path.join(out_dir, "skipped_shapes.csv")
 
 samples = 100_000   
 bins = 40           
@@ -18,7 +19,65 @@ ranges = {
     "D2": (0.0, np.sqrt(3)),
     "D3": (0.0, np.sqrt(np.sqrt(3) / 2)),
     "D4": (0.0, (1 / 3) ** (1 / 3)),
+    "SI": (-1.0, 1.0),
 }
+
+def curvature_values(mesh):
+    verts = np.asarray(mesh.vertices)
+    tris = np.asarray(mesh.triangles)
+    if len(tris) == 0:
+        return np.array([]), 1.0
+    _, first = np.unique(np.sort(tris, axis=1), axis=0, return_index=True)
+    tris = tris[np.sort(first)]
+
+    edges = [(tris[:, 1], tris[:, 2]), (tris[:, 2], tris[:, 0]), (tris[:, 0], tris[:, 1])]
+    cots, angles = [], []
+    for corner, (j, k) in enumerate(edges):
+        i = tris[:, corner]
+        u, v = verts[j] - verts[i], verts[k] - verts[i]
+        cross = np.linalg.norm(np.cross(u, v), axis=1)
+        dot = np.einsum("ij,ij->i", u, v)
+        cots.append(np.divide(dot, cross, out=np.zeros(len(tris)), where=cross > 0))
+        angles.append(np.arctan2(cross, dot))
+    face_area = np.linalg.norm(np.cross(verts[tris[:, 1]] - verts[tris[:, 0]],
+                                        verts[tris[:, 2]] - verts[tris[:, 0]]), axis=1) / 2
+
+    area = np.zeros(len(verts))
+    angle_sum = np.zeros(len(verts))
+    laplacian = np.zeros_like(verts)
+    for corner in range(3):
+        np.add.at(area, tris[:, corner], face_area / 3)
+        np.add.at(angle_sum, tris[:, corner], angles[corner])
+        j, k = edges[corner]
+        weighted = cots[corner][:, None] * (verts[j] - verts[k])
+        np.add.at(laplacian, j, -weighted)
+        np.add.at(laplacian, k, weighted)
+
+    ok = area > 0
+    ends = np.concatenate([np.sort(np.stack([tris[:, a], tris[:, b]], 1), axis=1)
+                           for a, b in ((0, 1), (1, 2), (2, 0))])
+    _, inverse, counts = np.unique(ends, axis=0, return_inverse=True, return_counts=True)
+    ok[np.unique(ends[counts[inverse] < 2])] = False
+
+    safe_area = np.where(ok, area, 1.0)
+    single = o3d.geometry.TriangleMesh(mesh.vertices, o3d.utility.Vector3iVector(tris))
+    single.orient_triangles()
+    single.compute_vertex_normals()
+    normals = np.asarray(single.vertex_normals)
+    a, b, c = verts[tris[:, 0]], verts[tris[:, 1]], verts[tris[:, 2]]
+    if np.einsum("ij,ij->i", a, np.cross(b, c)).sum() < 0:
+        normals = -normals
+    mean = -np.einsum("ij,ij->i", laplacian / (4 * safe_area[:, None]), normals) / 2
+    gauss = (2 * np.pi - angle_sum) / safe_area
+
+    spread = np.sqrt(np.maximum(mean ** 2 - gauss, 0))
+    k1, k2 = mean + spread, mean - spread
+    flat = np.abs(k1) + np.abs(k2) < 1e-9
+    with np.errstate(divide="ignore", invalid="ignore"):
+        shape_index = (2 / np.pi) * np.arctan((k1 + k2) / (k1 - k2))
+    shape_index = np.where(flat | ~np.isfinite(shape_index), 0.0, shape_index)
+    shape_index[~flat & (k1 == k2)] = np.sign(mean[~flat & (k1 == k2)])
+    return shape_index[ok], 1 - ok.mean()
 
 def closed_mesh_volume(mesh):
     verts = np.asarray(mesh.vertices)
@@ -51,7 +110,7 @@ def global_features(mesh):
     compactness = area ** 3 / (36 * np.pi * volume ** 2) if volume > 0 else np.nan
 
     obb_volume = mesh.get_oriented_bounding_box().volume()
-    eigenvalues, _ = principal_axes(verts)
+    eigenvalues, _ = principal_axes(mesh)
 
     return {
         "area": area,
@@ -95,8 +154,6 @@ def shape_property_values(mesh, rng):
 def histogram_features(values):
     row = {}
     for name, data in values.items():
-        # clip instead of letting np.histogram drop anything outside the range,
-        # otherwise the histogram of that shape wouldn't sum to 1 anymore
         lo, hi = ranges[name]
         counts, _ = np.histogram(np.clip(data, lo, hi), bins=bins, range=ranges[name])
         for i, count in enumerate(counts):
@@ -110,19 +167,27 @@ def extract_features(path, shape_class=""):
     rng = np.random.default_rng(seed)
     row = {"path": path, "class": shape_class}
     row.update(global_features(mesh))
-    row.update(histogram_features(shape_property_values(mesh, rng)))
+    values = shape_property_values(mesh, rng)
+    shape_index, dropped = curvature_values(mesh)
+    if len(shape_index) == 0:
+        raise ValueError("no vertex with a usable curvature")
+    values["SI"] = shape_index
+    row.update(histogram_features(values))
+    row["curvature_dropped"] = dropped
+    row["curvature_doubtful"] = bool(dropped > 0.5)
     return row
 
 def extract_all(root=normalised_dir):
-    rows = []
+    rows, skipped = [], []
     for i, (path, cls) in enumerate(walk_shapes(root), start=1):
         try:
             rows.append(extract_features(path, cls))
         except Exception as e:
             print("couldnt extract:", path, "-", e)
+            skipped.append({"path": path, "class": cls, "reason": str(e)})
         if i % 250 == 0:
             print(f"  {i} shapes done")
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows), pd.DataFrame(skipped)
 
 def print_features(key):
     path = os.path.join(normalised_dir, key + ".obj")
@@ -143,7 +208,8 @@ if __name__ == "__main__":
         print_features(sys.argv[1])
     else:
         print("extracting features from", normalised_dir)
-        features = extract_all()
+        features, skipped = extract_all()
         save_stats(features, features_csv)
+        save_stats(skipped, skipped_csv)
         print(features[["area", "compactness", "rectangularity", "diameter",
                         "convexity", "eccentricity"]].describe())
