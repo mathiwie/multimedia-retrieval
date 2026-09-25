@@ -5,9 +5,6 @@ import open3d as o3d
 
 from preprocessing import stats_csv, average_outliers_csv, find_average_and_outliers, save_stats
 
-# step 2.2: show the average shape and a few outliers in the viewer.
-# uses the stats csv from preprocessing.py, so no need to rerun the whole pipeline.
-# opens the shapes one by one, close the window to go to the next one
 repo_dir = os.path.dirname(os.path.abspath(__file__))
 csv_path = os.path.join(repo_dir, stats_csv)
 if not os.path.isfile(csv_path):
