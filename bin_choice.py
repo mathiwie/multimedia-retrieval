@@ -7,11 +7,6 @@ import open3d as o3d
 import features as ft
 from preprocessing import out_dir, normalised_dir, walk_shapes
 
-# picking B: too few bins throws information away, too many makes each bin
-# noisy (the assignment caps it at sqrt(N)). this measures both sides:
-#   noise  = how much a histogram of the SAME shape moves when we resample
-#   signal = how far apart histograms of DIFFERENT shapes are
-# and plots signal / noise against B, for the 5 distribution descriptors
 candidates = [5, 10, 20, 40, 80, 160, 320]
 shapes_used = 25
 
@@ -46,9 +41,6 @@ def main():
         print("  noise         " + "  ".join(f"{v:6.3f}" for v in noise))
         print("  signal        " + "  ".join(f"{v:6.3f}" for v in signal))
         print("  noise/signal  " + "  ".join(f"{v:6.1%}" for v in noise / signal))
-        # the signal saturates: past a point more bins separate shapes no
-        # better, while the noise keeps growing linearly. so take the smallest
-        # B that already reaches 98% of the best signal, within the sqrt(N) cap
         enough = [b for b, s in zip(candidates, signal)
                   if s >= 0.98 * signal.max() and b <= np.sqrt(ft.samples)]
         best[name] = min(enough) if enough else max(candidates)
