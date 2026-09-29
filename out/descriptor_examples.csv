@@ -11,5 +11,5 @@ convexity,low,Insect/D00788,0.0282570437137718,Insect
 convexity,high,Bookset/D01110,0.9040257291267246,Bookset
 eccentricity,low,Drum/D00383,1.4621244076300113,Drum
 eccentricity,high,City/D01101,957.304680316098,City
-shape_index,low,City/D01092,-0.15354650148316165,City
-shape_index,high,MilitaryVehicle/D00577,0.6984426229508198,MilitaryVehicle
+shape_index,low,Shelf/D00881,-0.1379907621247115,Shelf
+shape_index,high,DeskLamp/D00759,0.5789031873189018,DeskLamp

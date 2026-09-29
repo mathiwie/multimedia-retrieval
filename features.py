@@ -67,7 +67,7 @@ def curvature_values(mesh):
     a, b, c = verts[tris[:, 0]], verts[tris[:, 1]], verts[tris[:, 2]]
     if np.einsum("ij,ij->i", a, np.cross(b, c)).sum() < 0:
         normals = -normals
-    mean = -np.einsum("ij,ij->i", laplacian / (4 * safe_area[:, None]), normals) / 2
+    mean = -np.einsum("ij,ij->i", laplacian / (4 * safe_area[:, None]), normals)
     gauss = (2 * np.pi - angle_sum) / safe_area
 
     spread = np.sqrt(np.maximum(mean ** 2 - gauss, 0))
