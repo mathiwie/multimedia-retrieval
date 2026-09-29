@@ -3,6 +3,7 @@ import sys
 import numpy as np
 import pandas as pd
 import open3d as o3d
+import matplotlib.pyplot as plt
 
 import distance as ds
 import features as ft
@@ -45,30 +46,51 @@ def query_row(target, database_paths):
     return pd.DataFrame([ft.extract_features(prepared)]), prepared
 
 
-def show(query_path, matches, title, gui=True):
+def render(mesh, size=400):
+    vis = o3d.visualization.Visualizer()
+    vis.create_window(visible=False, width=size, height=size)
+    vis.add_geometry(mesh)
+    vis.poll_events()
+    vis.update_renderer()
+    image = np.asarray(vis.capture_screen_float_buffer(do_render=True))
+    vis.destroy_window()
+    rows, cols = np.nonzero((image < 0.99).any(axis=2))
+    if len(rows) == 0:
+        return image
+    pad = 10
+    return image[max(rows.min() - pad, 0):rows.max() + pad, max(cols.min() - pad, 0):cols.max() + pad]
+
+
+def show(query_path, matches, label, external=False, gui=True):
     os.makedirs(examples_dir, exist_ok=True)
+    captions = [f"query{' (external file)' if external else ''}\n{label}"] + [f"#{rank} {key(row.path)}\nd = {row.distance:.3f}"
+                                      for rank, row in enumerate(matches.itertuples(), start=1)]
     meshes = []
     for i, path in enumerate([query_path] + list(matches["path"])):
         mesh = o3d.io.read_triangle_mesh(path)
         mesh.compute_vertex_normals()
-        mesh.translate((1.1 * i, 0, 0) - mesh.get_center())
-        mesh.paint_uniform_color((0.9, 0.5, 0.1) if i == 0 else (0.75, 0.75, 0.75))
-        mesh.compute_vertex_normals()
+        mesh.paint_uniform_color((0.9, 0.5, 0.1) if i == 0 else (0.5, 0.55, 0.65))
         meshes.append(mesh)
 
-    width = min(300 + 260 * len(meshes), 1900)
-    vis = o3d.visualization.Visualizer()
-    vis.create_window(visible=False, width=width, height=int(width / (1.15 * len(meshes))) + 120)
-    for mesh in meshes:
-        vis.add_geometry(mesh)
-    vis.get_view_control().set_zoom(0.18)
-    vis.poll_events()
-    vis.update_renderer()
-    name = title.split()[0].replace("/", "_")
-    vis.capture_screen_image(os.path.join(examples_dir, f"{name}.png"), do_render=True)
-    vis.destroy_window()
-    print("snapshot:", os.path.join(examples_dir, f"{name}.png"))
+    shown = min(len(meshes), 11)
+    fig, ax = plt.subplots(1, shown, figsize=(2.4 * shown, 2.9))
+    for a, mesh, caption in zip(np.atleast_1d(ax), meshes, captions):
+        a.imshow(render(mesh))
+        a.set_title(caption, fontsize=8)
+        a.axis("off")
+    if shown < len(meshes):
+        fig.suptitle(f"first {shown - 1} of {len(meshes) - 1} matches", fontsize=9)
+    plt.tight_layout()
+    fname = os.path.join(examples_dir, f"{label.replace('/', '_')}.png")
+    plt.savefig(fname, dpi=150)
+    plt.close(fig)
+    print("snapshot:", fname)
+
     if gui:
+        for i, mesh in enumerate(meshes):
+            mesh.translate((1.1 * i, 0, 0) - mesh.get_center())
+        distances = ", ".join(f"{d:.3f}" for d in matches["distance"])
+        title = f"{label} -> {len(matches)} best matches (orange = query, left to right: {distances})"
         o3d.visualization.draw_geometries(meshes, window_name=title,
                                           width=min(400 + 300 * len(meshes), 1900), height=600)
 
@@ -82,6 +104,8 @@ def main(target, k=default_k, threshold=None, gui=True):
     raw, query_path = query_row(target, database_paths)
     query = nf.normalised_table(raw.reset_index(drop=True), params)
     table = nf.normalised_table(database.reset_index(drop=True), params)
+    print(f"normalised ({normalisation}) global descriptors of the query:")
+    print(query[nf.globals_used].iloc[0].astype(float).round(3).to_string())
 
     weights = {name: (globals_weight if name == "globals" else 1.0) for name in ds.blocks}
     scales = ds.fit_scales(table, histogram_metric)
@@ -97,7 +121,6 @@ def main(target, k=default_k, threshold=None, gui=True):
         print(f"{len(results)} shapes closer than {threshold}")
     matches = results.head(k if threshold is None else len(results))
 
-    key = lambda p: f"{os.path.basename(os.path.dirname(p))}/{os.path.splitext(os.path.basename(p))[0]}"
     print(f"\n{'rank':>4}  {'shape':28s} {'class':24s} distance")
     for rank, row in enumerate(matches.itertuples(), start=1):
         print(f"{rank:>4}  {key(row.path):28s} {row._2:24s} {row.distance:.4f}")
@@ -105,17 +128,30 @@ def main(target, k=default_k, threshold=None, gui=True):
         print("  (nothing within that distance)")
         return results
 
-    label = target if "/" in target and not os.path.isfile(target) else key(query_path)
-    show(query_path, matches, f"{label} -> {len(matches)} best matches (orange = query)", gui)
+    external = os.path.isfile(target) and not target.startswith(normalised_dir)
+    label = key(target) if external else key(query_path)
+    show(query_path, matches, label, external, gui)
     return results
 
 
+def key(path):
+    return f"{os.path.basename(os.path.dirname(path))}/{os.path.splitext(os.path.basename(path))[0]}"
+
+
+def flag_value(argv, flag, default, cast):
+    if flag not in argv:
+        return default
+    i = argv.index(flag)
+    if i + 1 >= len(argv):
+        sys.exit(f"{flag} needs a value")
+    return cast(argv[i + 1])
+
+
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if not a.startswith("-")]
-    flags = [a for a in sys.argv[1:] if a.startswith("-")]
-    if not args:
-        sys.exit("usage: python query.py <Class/shape | mesh file> [-k 5] [-t 0.35] [-nogui]")
-    value = lambda flag, default: (float(args.pop(1)) if flag in flags and len(args) > 1 else default)
-    k = int(value("-k", default_k)) if "-k" in flags else default_k
-    threshold = value("-t", None) if "-t" in flags else None
-    main(args[0], k, threshold, gui="-nogui" not in flags)
+    argv = sys.argv[1:]
+    usage = "usage: python query.py <Class/shape | mesh file> [-k 5] [-t 0.35] [-nogui]"
+    if not argv or argv[0].startswith("-"):
+        sys.exit(usage)
+    k = flag_value(argv, "-k", default_k, int)
+    threshold = flag_value(argv, "-t", None, float)
+    main(argv[0], k, threshold, gui="-nogui" not in argv)

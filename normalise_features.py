@@ -61,5 +61,25 @@ def main():
         print(table[globals_used].describe().T[["mean", "std", "min", "max"]].round(2).to_string())
 
 
+def print_normalised(key, kind="log"):
+    data = pd.read_csv(ft.features_csv)
+    database, _ = split_holdout(data)
+    table = normalised_table(data, fit(database, kind))
+    path = os.path.join(ft.normalised_dir, key + ".obj").replace("\\", "/")
+    match = table[table["path"].str.replace("\\", "/", regex=False) == path]
+    if len(match) == 0:
+        raise SystemExit(f"no features for {key} in {ft.features_csv}")
+    held_out = match.index[0] not in database.index
+    print(f"{key} ({kind} normalisation{', held out of the database' if held_out else ''})")
+    print(match.iloc[0][globals_used].astype(float).round(4).to_string())
+    for name in ft.ranges:
+        values = match.iloc[0][[f"{name}_{i}" for i in range(ft.bins)]].astype(float)
+        print(f"{name:3s} " + " ".join(f"{v:.3f}" for v in values))
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    if len(sys.argv) > 1:
+        print_normalised(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "log")
+    else:
+        main()

@@ -11,10 +11,32 @@ results_csv = os.path.join(out_dir, "distance_comparison.csv")
 ks = (1, 5, 10)
 
 
-def precision_at_k(matrix, labels, k):
+def precision_at_k(matrix, labels, k, rows=None):
     np.fill_diagonal(matrix, np.inf)
-    nearest = np.argpartition(matrix, k, axis=1)[:, :k]
-    return (labels[nearest] == labels[:, None]).mean()
+    rows = np.arange(len(labels)) if rows is None else rows
+    nearest = np.argpartition(matrix[rows], k, axis=1)[:, :k]
+    return (labels[nearest] == labels[rows, None]).mean()
+
+
+def tune_test_check(table, weightings, k=10, seed=0):
+    rng = np.random.default_rng(seed)
+    labels = table["class"].to_numpy()
+    tune = np.zeros(len(table), dtype=bool)
+    for cls in np.unique(labels):
+        members = np.flatnonzero(labels == cls)
+        tune[rng.choice(members, size=len(members) // 2, replace=False)] = True
+    scores = {}
+    for name, weights in weightings.items():
+        scales = ds.fit_scales(table)
+        matrix = ds.distances_to(table, table, scales, weights)
+        scores[name] = (precision_at_k(matrix, labels, k, np.flatnonzero(tune)),
+                        precision_at_k(matrix, labels, k, np.flatnonzero(~tune)))
+    chosen = max(scores, key=lambda name: scores[name][0])
+    print(f"\ntune/test split of the queries (log, euclidean, precision@{k}):")
+    for name, (on_tune, on_test) in scores.items():
+        print(f"  {name:16s} tune {on_tune:.3f}  test {on_test:.3f}{'  <- chosen on tune' if name == chosen else ''}")
+    print(f"chosen on the tune half: {chosen}, precision@{k} on the unseen test half {scores[chosen][1]:.3f}")
+    return chosen, scores
 
 
 def evaluate(database, histogram_metric, weights):
@@ -57,6 +79,7 @@ def main():
     comparison = pd.DataFrame(rows).sort_values("precision@10", ascending=False)
     save_stats(comparison, results_csv)
     print("\nbest:", comparison.iloc[0].to_dict())
+    tune_test_check(tables["log"], weightings)
 
     main_rows = comparison[comparison["blocks"] == "all blocks"]
     fig, ax = plt.subplots(figsize=(9, 5))

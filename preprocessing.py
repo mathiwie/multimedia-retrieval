@@ -289,7 +289,7 @@ def check_normalisation(root):
         if verts.shape[0] == 0:
             continue
         center = verts.mean(axis=0)
-        _, axes = principal_axes(mesh)
+        eigenvalues, axes = principal_axes(mesh)
         moments = flip_moments(mesh)
         size = verts.max(axis=0) - verts.min(axis=0)
         rows.append({
@@ -302,11 +302,20 @@ def check_normalisation(root):
             "minor_z_cos": abs(axes[2, 2]),
             "moment_x": moments[0], "moment_y": moments[1], "moment_z": moments[2],
             "longest_side": np.max(size),
+            "ambiguous_axes": bool(eigenvalues[1] / eigenvalues[0] > 0.99
+                                   or eigenvalues[2] / eigenvalues[1] > 0.99),
         })
     df = pd.DataFrame(rows)
     print(df.describe())
-    negative = (df[["moment_x", "moment_y", "moment_z"]] < 0).any(axis=1).sum()
-    print("shapes with a negative flip moment:", negative)
+    misaligned = df[["major_x_cos", "medium_y_cos", "minor_z_cos"]].min(axis=1) < 0.99
+    negative = (df[["moment_x", "moment_y", "moment_z"]] < 0).any(axis=1)
+    tiny = (df[["moment_x", "moment_y", "moment_z"]].abs().where(
+        df[["moment_x", "moment_y", "moment_z"]] < 0) < 1e-3).any(axis=1)
+    print(f"shapes with two (near) equal eigenvalues, so PCA axes are not unique: {df['ambiguous_axes'].sum()}")
+    print(f"shapes with an axis off by more than |cos| 0.99: {misaligned.sum()}"
+          f" (of which {(misaligned & df['ambiguous_axes']).sum()} have ambiguous axes)")
+    print(f"shapes with a negative flip moment: {negative.sum()}"
+          f" (of which {tiny.sum()} are within 1e-3 of 0, i.e. symmetric along that axis)")
     save_stats(df, normalisation_csv)
     make_normalisation_histograms(df)
     return df
