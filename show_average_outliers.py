@@ -15,8 +15,9 @@ picked = find_average_and_outliers(stats)
 save_stats(picked, os.path.join(repo_dir, average_outliers_csv))
 
 for _, row in picked.iterrows():
-    title = f"{row['kind']}: {row['class']} - {os.path.basename(row['path'])} ({row['num_verts']}v / {row['num_faces']}f)"
+    path = row["path"].replace("\\", "/")
+    title = f"{row['kind']}: {row['class']} - {os.path.basename(path)} ({row['num_verts']}v / {row['num_faces']}f)"
     print("showing", title)
-    mesh = o3d.io.read_triangle_mesh(os.path.join(repo_dir, row["path"]))
+    mesh = o3d.io.read_triangle_mesh(os.path.join(repo_dir, path))
     mesh.compute_vertex_normals()
     o3d.visualization.draw_geometries([mesh], window_name=title, width=1280, height=720, mesh_show_wireframe=True)
