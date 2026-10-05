@@ -3,7 +3,10 @@ import sys
 import numpy as np
 import pandas as pd
 import open3d as o3d
-from preprocessing import out_dir, normalised_dir, walk_shapes, save_stats, principal_axes
+from scipy.sparse import csr_matrix
+from scipy.spatial import cKDTree
+from scipy.sparse.csgraph import dijkstra
+from preprocessing import out_dir, normalised_dir, walk_shapes, save_stats, principal_axes, split_long_edges
 
 features_csv = os.path.join(out_dir, "features.csv")
 skipped_csv = os.path.join(out_dir, "skipped_shapes.csv")
@@ -12,6 +15,12 @@ samples = 100_000
 bins = 40           
 seed = 0            
 volume_res = 128    
+curvature_max = np.sqrt(8)
+curvature_radius = 0.08
+curvature_min_faces = 4
+curvature_flat = 1e-3
+curvature_edge = 1.0
+curvature_samples = 10_000
 
 ranges = {
     "A3": (0.0, np.pi),
@@ -19,65 +28,105 @@ ranges = {
     "D2": (0.0, np.sqrt(3)),
     "D3": (0.0, np.sqrt(np.sqrt(3) / 2)),
     "D4": (0.0, (1 / 3) ** (1 / 3)),
-    "SI": (-1.0, 1.0),
+    "CURV": (-curvature_max, curvature_max),
 }
 
-def curvature_values(mesh):
+def surface_graph(verts, tris):
+    ends = np.unique(np.sort(tris[:, [[0, 1], [1, 2], [2, 0]]].reshape(-1, 2), axis=1), axis=0)
+    lengths = np.maximum(np.linalg.norm(verts[ends[:, 0]] - verts[ends[:, 1]], axis=1), 1e-12)
+    n = len(verts)
+    return csr_matrix((np.r_[lengths, lengths], (np.r_[ends[:, 0], ends[:, 1]], np.r_[ends[:, 1], ends[:, 0]])),
+                      shape=(n, n))
+
+def outward_normals(mesh, tris):
     verts = np.asarray(mesh.vertices)
-    tris = np.asarray(mesh.triangles)
-    if len(tris) == 0:
-        return np.array([]), 1.0
-    _, first = np.unique(np.sort(tris, axis=1), axis=0, return_index=True)
-    tris = tris[np.sort(first)]
-
-    edges = [(tris[:, 1], tris[:, 2]), (tris[:, 2], tris[:, 0]), (tris[:, 0], tris[:, 1])]
-    cots, angles = [], []
-    for corner, (j, k) in enumerate(edges):
-        i = tris[:, corner]
-        u, v = verts[j] - verts[i], verts[k] - verts[i]
-        cross = np.linalg.norm(np.cross(u, v), axis=1)
-        dot = np.einsum("ij,ij->i", u, v)
-        cots.append(np.divide(dot, cross, out=np.zeros(len(tris)), where=cross > 0))
-        angles.append(np.arctan2(cross, dot))
-    face_area = np.linalg.norm(np.cross(verts[tris[:, 1]] - verts[tris[:, 0]],
-                                        verts[tris[:, 2]] - verts[tris[:, 0]]), axis=1) / 2
-
-    area = np.zeros(len(verts))
-    angle_sum = np.zeros(len(verts))
-    laplacian = np.zeros_like(verts)
-    for corner in range(3):
-        np.add.at(area, tris[:, corner], face_area / 3)
-        np.add.at(angle_sum, tris[:, corner], angles[corner])
-        j, k = edges[corner]
-        weighted = cots[corner][:, None] * (verts[j] - verts[k])
-        np.add.at(laplacian, j, -weighted)
-        np.add.at(laplacian, k, weighted)
-
-    ok = area > 0
-    ends = np.concatenate([np.sort(np.stack([tris[:, a], tris[:, b]], 1), axis=1)
-                           for a, b in ((0, 1), (1, 2), (2, 0))])
-    _, inverse, counts = np.unique(ends, axis=0, return_inverse=True, return_counts=True)
-    ok[np.unique(ends[counts[inverse] < 2])] = False
-
-    safe_area = np.where(ok, area, 1.0)
     single = o3d.geometry.TriangleMesh(mesh.vertices, o3d.utility.Vector3iVector(tris))
     single.orient_triangles()
+    labels = np.asarray(single.cluster_connected_triangles()[0])
+    oriented = np.asarray(single.triangles).copy()
+    corners = verts[oriented]
+    centroids = corners.mean(axis=1)
+    count = np.bincount(labels)
+    centre = np.stack([np.bincount(labels, centroids[:, i]) / count for i in range(3)], axis=1)[labels]
+    a, b, c = (corners[:, i] - centre for i in range(3))
+    volume = np.bincount(labels, np.einsum("ij,ij->i", a, np.cross(b, c)))
+    inside_out = volume[labels] < 0
+    oriented[inside_out] = oriented[inside_out][:, [0, 2, 1]]
+    single.triangles = o3d.utility.Vector3iVector(oriented)
     single.compute_vertex_normals()
-    normals = np.asarray(single.vertex_normals)
-    a, b, c = verts[tris[:, 0]], verts[tris[:, 1]], verts[tris[:, 2]]
-    if np.einsum("ij,ij->i", a, np.cross(b, c)).sum() < 0:
-        normals = -normals
-    mean = -np.einsum("ij,ij->i", laplacian / (4 * safe_area[:, None]), normals)
-    gauss = (2 * np.pi - angle_sum) / safe_area
+    return np.asarray(single.vertex_normals)
 
-    spread = np.sqrt(np.maximum(mean ** 2 - gauss, 0))
-    k1, k2 = mean + spread, mean - spread
-    flat = np.abs(k1) + np.abs(k2) < 1e-9
-    with np.errstate(divide="ignore", invalid="ignore"):
-        shape_index = (2 / np.pi) * np.arctan((k1 + k2) / (k1 - k2))
-    shape_index = np.where(flat | ~np.isfinite(shape_index), 0.0, shape_index)
-    shape_index[~flat & (k1 == k2)] = np.sign(mean[~flat & (k1 == k2)])
-    return shape_index[ok], 1 - ok.mean()
+def vertex_areas(verts, tris):
+    face_area = np.linalg.norm(np.cross(verts[tris[:, 1]] - verts[tris[:, 0]],
+                                        verts[tris[:, 2]] - verts[tris[:, 0]]), axis=1) / 2
+    area = np.zeros(len(verts))
+    for corner in range(3):
+        np.add.at(area, tris[:, corner], face_area / 3)
+    return area
+
+def face_moments(verts, tris):
+    a, b, c = verts[tris[:, 0]], verts[tris[:, 1]], verts[tris[:, 2]]
+    area = np.linalg.norm(np.cross(b - a, c - a), axis=1) / 2
+    total = a + b + c
+    second = sum(v[:, :, None] * v[:, None, :] for v in (a, b, c, total))
+    return area, area[:, None] * total / 3, (area[:, None, None] * second / 12).reshape(-1, 9)
+
+def fine_mesh(mesh, radius):
+    mesh = split_long_edges(mesh, radius * curvature_edge)
+    tris = np.asarray(mesh.triangles)
+    _, first = np.unique(np.sort(tris, axis=1), axis=0, return_index=True)
+    return mesh, np.asarray(mesh.vertices), tris[np.sort(first)]
+
+def curvature_at(mesh, verts, tris, query, radius, chunk=500):
+    graph = surface_graph(verts, tris)
+    normals = outward_normals(mesh, tris)[query]
+    face_area, first_moment, second_moment = face_moments(verts, tris)
+    centroids = verts[tris].mean(axis=1)
+
+    close = cKDTree(verts[query]).sparse_distance_matrix(cKDTree(centroids), radius, output_type="coo_matrix")
+    keep = np.zeros(close.nnz, dtype=bool)
+    order = np.argsort(close.row, kind="stable")
+    rows_sorted, faces_sorted = close.row[order], close.col[order]
+    bounds = np.searchsorted(rows_sorted, np.arange(0, len(query) + chunk, chunk))
+    for c, start in enumerate(range(0, len(query), chunk)):
+        lo, hi = bounds[c], bounds[c + 1]
+        if lo == hi:
+            continue
+        reach = np.isfinite(dijkstra(graph, indices=query[start:start + chunk], limit=2 * radius))
+        keep[order[lo:hi]] = reach[rows_sorted[lo:hi] - start, tris[faces_sorted[lo:hi], 0]]
+    near = csr_matrix((np.ones(keep.sum()), (close.row[keep], close.col[keep])), shape=(len(query), len(tris)))
+
+    total = near @ face_area
+    usable = (np.diff(near.indptr) >= curvature_min_faces) & (total > 0)
+    total = np.where(usable, total, 1.0)
+    mean = near @ first_moment / total[:, None]
+    cov = (near @ second_moment / total[:, None]).reshape(-1, 3, 3) - mean[:, :, None] * mean[:, None, :]
+    eig = np.clip(np.linalg.eigvalsh(cov), 0, None)
+    spread = eig.sum(axis=1)
+    variation = np.divide(eig[:, 0], spread, out=np.zeros(len(query)), where=spread > 0)
+    side = -np.sign(np.einsum("ij,ij->i", mean - verts[query], normals))
+    magnitude = np.sqrt(24 * variation)
+    values = np.where(magnitude < curvature_flat, 0.0, side * magnitude)
+    return np.where(usable, values, np.nan)
+
+def curvature_values(mesh, radius=curvature_radius, samples=curvature_samples):
+    mesh, verts, tris = fine_mesh(mesh, radius)
+    if len(tris) == 0:
+        return np.array([]), np.array([]), 1.0
+    area = vertex_areas(verts, tris)
+    if len(verts) <= samples:
+        query, weights = np.flatnonzero(area > 0), area[area > 0]
+    else:
+        drawn = np.random.default_rng(seed).choice(len(verts), size=samples, p=area / area.sum())
+        query, counts = np.unique(drawn, return_counts=True)
+        weights = counts.astype(float)
+    values = curvature_at(mesh, verts, tris, query, radius)
+    usable = np.isfinite(values)
+    return values[usable], weights[usable], 1 - weights[usable].sum() / weights.sum()
+
+def curvature_per_vertex(mesh, radius=curvature_radius):
+    mesh, verts, tris = fine_mesh(mesh, radius)
+    return mesh, curvature_at(mesh, verts, tris, np.arange(len(verts)), radius)
 
 def closed_mesh_volume(mesh):
     verts = np.asarray(mesh.vertices)
@@ -105,9 +154,12 @@ def global_features(mesh):
     hull_volume = closed_mesh_volume(hull)
     diameter = np.sqrt(((hull_verts[:, None, :] - hull_verts[None, :, :]) ** 2).sum(-1).max())
 
-    leaked = volume > hull_volume
-    volume = min(volume, hull_volume)
     compactness = area ** 3 / (36 * np.pi * volume ** 2) if volume > 0 else np.nan
+    hull_fallback = not volume > 0 or volume > hull_volume or compactness < 1
+    if hull_fallback:
+        volume = hull_volume
+        hull_area = hull.get_surface_area()
+        compactness = hull_area ** 3 / (36 * np.pi * volume ** 2) if volume > 0 else np.nan
 
     obb_volume = mesh.get_oriented_bounding_box().volume()
     eigenvalues, _ = principal_axes(mesh)
@@ -120,7 +172,7 @@ def global_features(mesh):
         "convexity": volume / hull_volume if hull_volume > 0 else np.nan,
         "eccentricity": eigenvalues[0] / eigenvalues[2] if eigenvalues[2] > 0 else np.nan,
         "volume": volume,
-        "volume_doubtful": bool(leaked or compactness < 1),
+        "hull_fallback": bool(hull_fallback),
     }
 
 def shape_property_values(mesh, rng):
@@ -136,7 +188,7 @@ def shape_property_values(mesh, rng):
                         out=np.zeros(samples), where=lengths > 0)
     angles = np.arccos(np.clip(cosines, -1, 1))
 
-    d1 = np.linalg.norm(pick(1)[:, 0] - verts.mean(axis=0), axis=1)
+    d1 = np.linalg.norm(verts - verts.mean(axis=0), axis=1)
 
     d2_pts = pick(2)
     d2 = np.linalg.norm(d2_pts[:, 1] - d2_pts[:, 0], axis=1)
@@ -151,13 +203,14 @@ def shape_property_values(mesh, rng):
 
     return {"A3": angles, "D1": d1, "D2": d2, "D3": d3, "D4": d4}
 
-def histogram_features(values):
+def histogram_features(values, weights={}):
     row = {}
     for name, data in values.items():
         lo, hi = ranges[name]
-        counts, _ = np.histogram(np.clip(data, lo, hi), bins=bins, range=ranges[name])
+        w = weights.get(name, np.ones(len(data)))
+        counts, _ = np.histogram(np.clip(data, lo, hi), bins=bins, range=ranges[name], weights=w)
         for i, count in enumerate(counts):
-            row[f"{name}_{i}"] = count / len(data)
+            row[f"{name}_{i}"] = count / w.sum()
     return row
 
 def extract_features(path, shape_class=""):
@@ -168,11 +221,11 @@ def extract_features(path, shape_class=""):
     row = {"path": path, "class": shape_class}
     row.update(global_features(mesh))
     values = shape_property_values(mesh, rng)
-    shape_index, dropped = curvature_values(mesh)
-    if len(shape_index) == 0:
+    curvature, area, dropped = curvature_values(mesh)
+    if len(curvature) == 0 or area.sum() == 0:
         raise ValueError("no vertex with a usable curvature")
-    values["SI"] = shape_index
-    row.update(histogram_features(values))
+    values["CURV"] = curvature
+    row.update(histogram_features(values, {"CURV": area}))
     row["curvature_dropped"] = dropped
     row["curvature_doubtful"] = bool(dropped > 0.5)
     return row

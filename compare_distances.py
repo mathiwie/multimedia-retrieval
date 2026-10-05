@@ -55,7 +55,7 @@ def main():
         "all blocks": all_blocks,
         "globals only": {"globals": 1.0},
         "histograms only": {name: (0.0 if name == "globals" else 1.0) for name in ds.blocks},
-        "no curvature": {name: (0.0 if name == "SI" else 1.0) for name in ds.blocks},
+        "no curvature": {name: (0.0 if name == "CURV" else 1.0) for name in ds.blocks},
         "globals x3": {name: (3.0 if name == "globals" else 1.0) for name in ds.blocks},
         "globals x6": {name: (6.0 if name == "globals" else 1.0) for name in ds.blocks},
         "globals x10": {name: (10.0 if name == "globals" else 1.0) for name in ds.blocks},

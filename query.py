@@ -6,6 +6,7 @@ import open3d as o3d
 import matplotlib.pyplot as plt
 
 import distance as ds
+from snapshots import render
 import features as ft
 import normalise_features as nf
 from preprocessing import (out_dir, normalised_dir, clean_mesh, normalise_mesh,
@@ -46,21 +47,6 @@ def query_row(target, database_paths):
     return pd.DataFrame([ft.extract_features(prepared)]), prepared
 
 
-def render(mesh, size=400):
-    vis = o3d.visualization.Visualizer()
-    vis.create_window(visible=False, width=size, height=size)
-    vis.add_geometry(mesh)
-    vis.poll_events()
-    vis.update_renderer()
-    image = np.asarray(vis.capture_screen_float_buffer(do_render=True))
-    vis.destroy_window()
-    rows, cols = np.nonzero((image < 0.99).any(axis=2))
-    if len(rows) == 0:
-        return image
-    pad = 10
-    return image[max(rows.min() - pad, 0):rows.max() + pad, max(cols.min() - pad, 0):cols.max() + pad]
-
-
 def show(query_path, matches, label, external=False, gui=True):
     os.makedirs(examples_dir, exist_ok=True)
     captions = [f"query{' (external file)' if external else ''}\n{label}"] + [f"#{rank} {key(row.path)}\nd = {row.distance:.3f}"
@@ -75,7 +61,7 @@ def show(query_path, matches, label, external=False, gui=True):
     shown = min(len(meshes), 11)
     fig, ax = plt.subplots(1, shown, figsize=(2.4 * shown, 2.9))
     for a, mesh, caption in zip(np.atleast_1d(ax), meshes, captions):
-        a.imshow(render(mesh))
+        a.imshow(render(mesh, size=400))
         a.set_title(caption, fontsize=8)
         a.axis("off")
     if shown < len(meshes):

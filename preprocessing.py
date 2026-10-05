@@ -99,7 +99,7 @@ def make_histograms(df, label=""):
 
 def make_class_histogram(df, label=""):
     os.makedirs(out_dir, exist_ok=True)
-    counts = df["class"].value_counts().sort_index()
+    counts = df["class"].value_counts().sort_values(ascending=False)
     fig, ax = plt.subplots(figsize=(max(8, len(counts) * 0.3), 5))
     ax.bar(counts.index, counts.values, color="seagreen", edgecolor="black")
     ax.set_title("shapes per class " + label)
@@ -182,10 +182,70 @@ def simplify_mesh(mesh, target=target_verts, lo=target_min, hi=target_max):
     cluster = lambda divisions: mesh.simplify_vertex_clustering(voxel_size=extent / divisions)
     return search_in_range(cluster, 10, 1000, target, lo, hi)
 
-def refine_mesh(mesh, target=target_verts, lo=target_min, hi=target_max):
+def mesh_edges(tris):
+    ends = np.sort(tris[:, [[0, 1], [1, 2], [2, 0]]], axis=2).reshape(-1, 2)
+    keys, edge_id = np.unique(ends, axis=0, return_inverse=True)
+    return keys, edge_id.reshape(-1, 3)
+
+def split_edges(verts, tris, keys, edge_id, marked):
+    while True:
+        count = marked[edge_id].sum(axis=1)
+        promote = (count == 2)
+        if not promote.any():
+            break
+        marked[edge_id[promote].ravel()] = True
+
+    midpoint = np.full(len(keys), -1)
+    midpoint[marked] = len(verts) + np.arange(marked.sum())
+    new_verts = np.vstack([verts, verts[keys[marked]].mean(axis=1)])
+    m = midpoint[edge_id]
+
+    keep = tris[count == 0]
+    red_t, red_m = tris[count == 3], m[count == 3]
+    red = np.concatenate([
+        np.stack([red_t[:, 0], red_m[:, 0], red_m[:, 2]], 1),
+        np.stack([red_m[:, 0], red_t[:, 1], red_m[:, 1]], 1),
+        np.stack([red_m[:, 2], red_m[:, 1], red_t[:, 2]], 1),
+        np.stack([red_m[:, 0], red_m[:, 1], red_m[:, 2]], 1)])
+    green_t, green_m = tris[count == 1], m[count == 1]
+    j = np.argmax(green_m >= 0, axis=1)
+    rows = np.arange(len(green_t))
+    va, vb, vc = green_t[rows, j], green_t[rows, (j + 1) % 3], green_t[rows, (j + 2) % 3]
+    mid = green_m[rows, j]
+    green = np.concatenate([np.stack([va, mid, vc], 1), np.stack([mid, vb, vc], 1)])
+
+    return o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(new_verts),
+                                     o3d.utility.Vector3iVector(np.concatenate([keep, red, green])))
+
+def split_largest(mesh, budget):
+    verts = np.asarray(mesh.vertices)
+    tris = np.asarray(mesh.triangles)
+    keys, edge_id = mesh_edges(tris)
+    a, b, c = verts[tris[:, 0]], verts[tris[:, 1]], verts[tris[:, 2]]
+    order = np.argsort(-np.linalg.norm(np.cross(b - a, c - a), axis=1), kind="stable")
+
+    _, first = np.unique(edge_id[order].ravel(), return_index=True)
+    new_edges = np.cumsum(np.bincount(first // 3, minlength=len(order)))
+    chosen = order[:max(1, np.searchsorted(new_edges, budget, side="right"))]
+    marked = np.zeros(len(keys), dtype=bool)
+    marked[edge_id[chosen].ravel()] = True
+    return split_edges(verts, tris, keys, edge_id, marked)
+
+def split_long_edges(mesh, max_length, rounds=20):
+    for _ in range(rounds):
+        verts = np.asarray(mesh.vertices)
+        tris = np.asarray(mesh.triangles)
+        keys, edge_id = mesh_edges(tris)
+        marked = np.linalg.norm(verts[keys[:, 0]] - verts[keys[:, 1]], axis=1) > max_length
+        if not marked.any():
+            break
+        mesh = split_edges(verts, tris, keys, edge_id, marked)
+    return mesh
+
+def refine_mesh(mesh, target=target_verts, lo=target_min, hi=target_max, rounds=30):
     count = 0
-    while num_verts(mesh) < lo and count < 8:
-        mesh = clean_mesh(mesh.subdivide_midpoint(number_of_iterations=1))
+    while num_verts(mesh) < lo and count < rounds:
+        mesh = clean_mesh(split_largest(mesh, target - num_verts(mesh)))
         count += 1
     if num_verts(mesh) > hi:
         mesh = simplify_mesh(mesh, target, lo, hi)
@@ -242,15 +302,18 @@ def flip_moments(mesh):
     centroids = verts[tris].mean(axis=1)
     return np.sum(np.sign(centroids) * centroids ** 2, axis=0)
 
-def normalise_mesh(mesh):
+def normalisation_steps(mesh):
+    steps = [("original", o3d.geometry.TriangleMesh(mesh))]
     verts = np.asarray(mesh.vertices)
     verts = verts - verts.mean(axis=0)
     mesh.vertices = o3d.utility.Vector3dVector(verts)
+    steps.append(("translated", o3d.geometry.TriangleMesh(mesh)))
 
     _, axes = principal_axes(mesh)
     rotation = np.stack([axes[:, 0], axes[:, 1], np.cross(axes[:, 0], axes[:, 1])])
     verts = verts @ rotation.T
     mesh.vertices = o3d.utility.Vector3dVector(verts)
+    steps.append(("aligned", o3d.geometry.TriangleMesh(mesh)))
 
     signs = np.where(flip_moments(mesh) < 0, -1.0, 1.0)
     verts = verts * signs
@@ -258,11 +321,17 @@ def normalise_mesh(mesh):
     if np.prod(signs) < 0:
         tris = np.asarray(mesh.triangles)
         mesh.triangles = o3d.utility.Vector3iVector(tris[:, [0, 2, 1]])
+    steps.append(("flipped " + ("".join(a for a, s in zip("xyz", signs) if s < 0) or "none"),
+                  o3d.geometry.TriangleMesh(mesh)))
 
     longest_side = np.max(verts.max(axis=0) - verts.min(axis=0))
     if longest_side > 0:
         mesh.scale(1.0 / longest_side, center=(0, 0, 0))
-    return mesh
+    steps.append(("scaled", mesh))
+    return steps
+
+def normalise_mesh(mesh):
+    return normalisation_steps(mesh)[-1][1]
 
 def normalise_all(root, dest):
     os.makedirs(dest, exist_ok=True)
@@ -321,21 +390,26 @@ def check_normalisation(root):
     return df
 
 def make_normalisation_histograms(df):
-    fig, ax = plt.subplots(1, 4, figsize=(22, 5))
+    fig, ax = plt.subplots(2, 3, figsize=(17, 9))
+    ax = ax.ravel()
     ax[0].hist(df["barycenter_dist"], bins=50, range=(0, 0.05), color="steelblue", edgecolor="black")
     ax[0].set_title("1. translate: barycenter distance to origin")
     ax[0].set_xlabel("distance (unit cube side = 1)")
-    ax[1].hist(df["major_x_cos"], bins=50, range=(0, 1 + 1e-9), color="seagreen", edgecolor="black")
-    ax[1].set_title("2. align: |cos| major eigenvector vs x axis")
-    ax[1].set_xlabel("|cos angle| (1 = aligned)")
+    for a, column, eigen, axis in zip(ax[1:4], ["major_x_cos", "medium_y_cos", "minor_z_cos"],
+                                      ["e1 (major)", "e2 (medium)", "e3 = e1 x e2 (minor)"], "xyz"):
+        a.hist(df[column], bins=50, range=(0, 1 + 1e-9), color="seagreen", edgecolor="black")
+        a.set_yscale("log")
+        a.set_title(f"2. align: |e . {axis}| for {eigen}")
+        a.set_xlabel("|cos angle| (1 = aligned)")
     smallest_moment = df[["moment_x", "moment_y", "moment_z"]].min(axis=1)
-    ax[2].hist(smallest_moment, bins=50, color="darkorange", edgecolor="black")
-    ax[2].axvline(0, color="black", linestyle="--")
-    ax[2].set_title("3. flip: smallest moment over x, y, z")
-    ax[2].set_xlabel("moment (>= 0 = flipped correctly)")
-    ax[3].hist(df["longest_side"], bins=51, range=(0.9, 1.1), color="indianred", edgecolor="black")
-    ax[3].set_title("4. scale: longest bounding box side")
-    ax[3].set_xlabel("length")
+    ax[4].hist(smallest_moment, bins=50, color="darkorange", edgecolor="black")
+    ax[4].set_yscale("log")
+    ax[4].axvline(0, color="black", linestyle="--")
+    ax[4].set_title("3. flip: smallest moment over x, y, z")
+    ax[4].set_xlabel("moment (>= 0 = flipped correctly)")
+    ax[5].hist(df["longest_side"], bins=51, range=(0.9, 1.1), color="indianred", edgecolor="black")
+    ax[5].set_title("4. scale: longest bounding box side")
+    ax[5].set_xlabel("length")
     for a in ax:
         a.set_ylabel("# shapes")
         a.ticklabel_format(axis="x", useOffset=False)

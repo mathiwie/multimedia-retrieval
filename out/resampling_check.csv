@@ -1,15 +1,10 @@
 key,class,num_verts,num_faces,num_verts_after,num_faces_after,kind
-Door/D01121,Door,16,16,8324,16384,refined
-Door/m1708,Door,16,16,8324,16384,refined
-Door/D01194,Door,18,18,9442,18432,refined
+Door/D01121,Door,16,16,7584,14904,refined
+Door/m1708,Door,16,16,7584,14904,refined
+Door/D01194,Door,18,18,7579,14722,refined
 Skyscraper/D00058,Skyscraper,73440,53448,8182,6684,simplified
 Biplane/m1120,Biplane,65722,129881,8153,15000,simplified
 PlantIndoors/D00080,PlantIndoors,64126,34887,7555,5454,simplified
-Gun/m660,Gun,1085,3260,5637,22613,vertex clustering
 House/D00286,House,28394,62973,8032,18502,vertex clustering
 House/D00574,House,15615,68220,9593,38386,vertex clustering
 House/D00901,House,17182,40698,7307,16682,vertex clustering
-Humanoid/m198,Humanoid,4657,19582,7341,28457,vertex clustering
-Jet/m1176,Jet,213,642,9339,35900,vertex clustering
-RectangleTable/m871,RectangleTable,60,184,9664,36739,vertex clustering
-Vase/m541,Vase,312,1196,5311,21116,vertex clustering
