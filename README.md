@@ -47,12 +47,13 @@ Ten shapes are held out of the database to act as unseen queries; they are liste
 | 1 viewer | `python main.py [mesh.obj]` | interactive viewer (mouse: rotate, zoom, pan; `W` toggles the wireframe) |
 | 2 statistics, resampling, normalisation | `python preprocessing.py` | `out/shape_stats*.csv`, `out/resampled/`, `out/normalised/`, histograms |
 | | `python preprocessing.py normalise` | only redo the normalisation and its check |
-| 2 inspection | `python show_average_outliers.py`, `python show_resampled.py [Class/shape ...] [-nogui]` | viewer windows; `out/resampling_examples.png` (original vs resampled, wireframe) |
+| 2 inspection | `python show_average_outliers.py [-nogui]`, `python show_resampled.py [Class/shape ...] [-nogui]` | viewer windows; `out/average_and_outliers.png`, `out/resampling_examples.png` (original vs resampled, wireframe) |
 | 3 normalisation check | `python show_normalised.py [Class/shape ...]`, `python show_normalisation_steps.py [Class/shape ...]` | before/after viewer windows; `out/normalisation_steps.png` (each step with a fixed camera) |
 | 3 features | `python features.py` | `out/features.csv`, `out/skipped_shapes.csv` |
 | | `python features.py Gun/D00204` | prints the features of one shape |
 | 3 checks | `python validate_features.py`, `python bin_choice.py`, `python show_descriptors.py [view]` | descriptor checks on simple shapes, bin choice, `out/descriptor_examples.png` |
-| 3 curvature | `python show_curvature.py [Class/shape ...]` | `out/curvature_examples.png` (meshes coloured by curvature) |
+| 3 curvature | `python show_curvature.py [Class/shape ...]`, `python curvature_choice.py` | `out/curvature_examples.png` (meshes coloured by curvature); validation on primitives and the radius / robustness comparison, `out/curvature_choice.csv` |
+| 3 volume | `python volume_check.py` | voxel resolution convergence, timing and multi-ray inside test, `out/volume_check.csv` |
 | 4 feature normalisation | `python normalise_features.py` | `out/features_{log,standard,minmax}.csv`, `out/holdout.csv` |
 | | `python normalise_features.py Gun/D00204 [log\|standard\|minmax]` | prints the normalised features of one shape |
 | 4 choosing the distance | `python compare_distances.py`, `python threshold_choice.py` | `out/distance_comparison.*`, `out/threshold_choice.png` |

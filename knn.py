@@ -99,7 +99,7 @@ def check(k=10, compared=50):
     print(f"max difference with distance.py: {gap:.2e}")
 
     recall, tree_time, brute_time = [], 0.0, 0.0
-    everyone = np.arange(n)
+    everyone = slice(None)
     for i in range(n):
         q = engine.vectors[i]
         start = time.perf_counter()

@@ -134,7 +134,7 @@ def closed_mesh_volume(mesh):
     a, b, c = verts[tris[:, 0]], verts[tris[:, 1]], verts[tris[:, 2]]
     return abs(np.einsum("ij,ij->i", a, np.cross(b, c)).sum() / 6)
 
-def mesh_volume(mesh, res=volume_res):
+def mesh_volume(mesh, res=volume_res, rays=1):
     scene = o3d.t.geometry.RaycastingScene()
     scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(mesh))
     verts = np.asarray(mesh.vertices)
@@ -142,7 +142,7 @@ def mesh_volume(mesh, res=volume_res):
     step = (hi - lo).max() / res
     axes = [np.arange(lo[i] + step / 2, hi[i] + step / 2, step) for i in range(3)]
     points = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3)
-    inside = scene.compute_occupancy(o3d.core.Tensor(points.astype(np.float32))).numpy()
+    inside = scene.compute_occupancy(o3d.core.Tensor(points.astype(np.float32)), nsamples=rays).numpy()
     return float(inside.sum()) * step ** 3
 
 def global_features(mesh):
