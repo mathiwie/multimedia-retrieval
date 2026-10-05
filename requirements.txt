@@ -1,0 +1,6 @@
+open3d>=0.17
+numpy>=1.26
+pandas>=2.0
+scipy>=1.11
+matplotlib>=3.7
+scikit-learn>=1.3
