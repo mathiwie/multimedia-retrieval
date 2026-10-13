@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import open3d as o3d
+from matplotlib.backend_bases import MouseEvent
 from sklearn.manifold import TSNE
 
 import distance as ds
@@ -26,13 +27,13 @@ def embed_2d(seed=0):
     return points
 
 
-def plot(points, gui=True):
+def plot(points, gui=True, brush=None):
     classes = sorted(points["class"].unique())
     code = points["class"].map({c: i for i, c in enumerate(classes)}).to_numpy()
     fig, ax = plt.subplots(figsize=(12, 10))
     dots = ax.scatter(points["x"], points["y"], c=code, cmap="nipy_spectral", s=10)
     for cls, part in points.groupby("class"):
-        ax.text(part["x"].median(), part["y"].median(), cls, fontsize=6, alpha=0.7,
+        ax.text(part["x"].median(), part["y"].median(), cls, fontsize=8, alpha=0.8,
                 ha="center", bbox=dict(boxstyle="square,pad=0.1", fc="white", alpha=0.5, lw=0))
     ax.set_title(f"tsne of {len(points)} shapes, {len(classes)} classes")
     ax.set_xticks([])
@@ -41,9 +42,6 @@ def plot(points, gui=True):
     fname = os.path.join(out_dir, "tsne.png")
     plt.savefig(fname, dpi=150)
     print("saved", fname)
-    if not gui:
-        plt.close(fig)
-        return
 
     note = ax.annotate("", xy=(0, 0), xytext=(12, 12), textcoords="offset points", fontsize=9,
                        bbox=dict(boxstyle="round", fc="white"), arrowprops=dict(arrowstyle="-"))
@@ -83,7 +81,17 @@ def plot(points, gui=True):
 
     fig.canvas.mpl_connect("motion_notify_event", hover)
     fig.canvas.mpl_connect("button_press_event", click)
-    plt.show()
+    if brush is not None:
+        row = points[points["path"].map(qr.key) == brush].iloc[0]
+        x, y = ax.transData.transform((row["x"], row["y"]))
+        fig.canvas.callbacks.process("motion_notify_event", MouseEvent("motion_notify_event", fig.canvas, x, y))
+        fname = os.path.join(out_dir, "tsne_brush.png")
+        plt.savefig(fname, dpi=150)
+        print("saved", fname)
+    if gui:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 if __name__ == "__main__":
@@ -94,4 +102,4 @@ if __name__ == "__main__":
         points["path"] = points["path"].str.replace("\\", "/", regex=False)
     else:
         points = embed_2d()
-    plot(points, gui="-nogui" not in argv)
+    plot(points, gui="-nogui" not in argv, brush=qr.flag_value(argv, "-brush", None, str))

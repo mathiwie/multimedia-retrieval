@@ -27,9 +27,11 @@ expected = {
              "diameter": np.sqrt(3), "convexity": 1.0, "eccentricity": 1.0},
     "sphere": {"area": np.pi, "compactness": 1.0, "rectangularity": np.pi / 6,
                "diameter": 1.0, "convexity": 1.0, "eccentricity": 1.0},
-    "long box": {"rectangularity": 1.0, "convexity": 1.0, "diameter": np.sqrt(1 + 2 * 0.1 ** 2),
+    "long box": {"area": 0.42, "compactness": 0.42 ** 3 / (36 * np.pi * 0.01 ** 2),
+                 "rectangularity": 1.0, "convexity": 1.0, "diameter": np.sqrt(1 + 2 * 0.1 ** 2),
                  "eccentricity": 56.1},
-    "cylinder": {"rectangularity": np.pi / 4, "convexity": 1.0,
+    "cylinder": {"area": 0.78 * np.pi, "compactness": (0.78 * np.pi) ** 3 / (36 * np.pi * (0.09 * np.pi) ** 2),
+                 "rectangularity": np.pi / 4, "convexity": 1.0,
                  "diameter": np.sqrt(1 + 0.6 ** 2), "eccentricity": 3.06},
 }
 

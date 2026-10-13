@@ -47,7 +47,7 @@ def query_row(target, database_paths):
     return pd.DataFrame([ft.extract_features(prepared)]), prepared
 
 
-def show(query_path, matches, label, external=False, gui=True):
+def show(query_path, matches, label, external=False, gui=True, suffix=""):
     os.makedirs(examples_dir, exist_ok=True)
     captions = [f"query{' (external file)' if external else ''}\n{label}"] + [f"#{rank} {key(row.path)}\nd = {row.distance:.3f}"
                                       for rank, row in enumerate(matches.itertuples(), start=1)]
@@ -59,15 +59,18 @@ def show(query_path, matches, label, external=False, gui=True):
         meshes.append(mesh)
 
     shown = min(len(meshes), 11)
-    fig, ax = plt.subplots(1, shown, figsize=(2.4 * shown, 2.9))
-    for a, mesh, caption in zip(np.atleast_1d(ax), meshes, captions):
+    columns = min(shown, 6)
+    rows = -(-shown // columns)
+    fig, ax = plt.subplots(rows, columns, figsize=(2.4 * columns, 2.9 * rows), squeeze=False)
+    for a in ax.ravel():
+        a.axis("off")
+    for a, mesh, caption in zip(ax.ravel(), meshes[:shown], captions):
         a.imshow(render(mesh, size=400))
         a.set_title(caption, fontsize=8)
-        a.axis("off")
     if shown < len(meshes):
         fig.suptitle(f"first {shown - 1} of {len(meshes) - 1} matches", fontsize=9)
     plt.tight_layout()
-    fname = os.path.join(examples_dir, f"{label.replace('/', '_')}.png")
+    fname = os.path.join(examples_dir, f"{label.replace('/', '_')}{suffix}.png")
     plt.savefig(fname, dpi=150)
     plt.close(fig)
     print("snapshot:", fname)

@@ -86,8 +86,7 @@ def main(target, k=qr.default_k, r=None, gui=True):
 
     external = qr.os.path.isfile(target) and not target.startswith(qr.normalised_dir)
     label = qr.key(target) if external else qr.key(query_path)
-    label += f"_knn{k}" if r is None else f"_r{r}"
-    qr.show(query_path, matches, label, external, gui)
+    qr.show(query_path, matches, label, external, gui, f"_knn{k}" if r is None else f"_r{r}")
     return matches
 
 

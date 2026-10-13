@@ -21,17 +21,10 @@ descriptors = {
     "curvature": "flat or concave vs strongly convex",
 }
 
-short = {"area": "area", "compactness": "compact", "rectangularity": "rect", "diameter": "diam",
-         "convexity": "convex", "eccentricity": "ecc", "curvature": "curv"}
-
 def caption(row, name, end):
-    def value(d):
-        v = row[d]
-        text = f"{short[d]} {v:.3g}" if abs(v) < 1000 else f"{short[d]} {v:,.0f}"
-        return f"▶{text}◀" if d == name else text
-    names = list(descriptors)
-    return "\n".join([f"{name}, {end}: {key(row)}", "  ".join(value(d) for d in names[:4]),
-                      "  ".join(value(d) for d in names[4:])])
+    v = row[name]
+    value = f"{v:.3f}" if abs(v) < 1000 else f"{v:,.0f}"
+    return f"{name} {end}: {value}\n{key(row)}"
 
 def key(row):
     return f"{row['class']}/{os.path.splitext(os.path.basename(row['path']))[0]}"
@@ -58,14 +51,14 @@ def main(view=False):
             labels.append(caption(row, name, end))
             picked.append({"descriptor": name, "end": end, "shape": key(row),
                            "value": row[name], "class": row["class"]})
-        save_grid(pair, labels, os.path.join(examples_dir, f"{name}.png"), columns=2, cell=(3.6, 3.6), fontsize=8)
+        save_grid(pair, labels, os.path.join(examples_dir, f"{name}.png"), columns=2, cell=(3.6, 3.6), fontsize=11)
         images += pair
         captions += labels
         if view:
             meshes = [shaded(low["path"]).translate((-0.8, 0, 0)), shaded(high["path"]).translate((0.8, 0, 0))]
             o3d.visualization.draw_geometries(meshes, window_name=f"{name}: {story}", width=1400, height=700)
     save_grid(images, captions, os.path.join(out_dir, "descriptor_examples.png"), columns=4,
-              cell=(3.6, 3.4), fontsize=7.5)
+              cell=(3.6, 3.4), fontsize=13)
 
     save_stats(pd.DataFrame(picked), examples_csv)
     print("snapshots in", examples_dir)

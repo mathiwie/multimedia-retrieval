@@ -85,8 +85,9 @@ def main():
     fig, ax = plt.subplots(figsize=(9, 5))
     for metric in main_rows["histogram distance"].unique():
         part = main_rows[main_rows["histogram distance"] == metric]
-        ax.bar([f"{r.normalisation}\n{metric}" for r in part.itertuples()],
-               part["precision@10"], label=metric)
+        bars = ax.bar([f"{r.normalisation}\n{metric}" for r in part.itertuples()],
+                      part["precision@10"], label=metric)
+        ax.bar_label(bars, fmt="%.3f", fontsize=9)
     ax.set_ylabel("precision@10")
     ax.set_title("normalisation and histogram distance (all blocks)")
     ax.set_ylim(0, 1.15 * main_rows["precision@10"].max())

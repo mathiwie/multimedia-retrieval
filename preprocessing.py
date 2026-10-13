@@ -102,7 +102,7 @@ def make_class_histogram(df, label=""):
     counts = df["class"].value_counts().sort_values()
     fig, ax = plt.subplots(figsize=(7, max(5, len(counts) * 0.16)))
     ax.barh(counts.index, counts.values, color="seagreen", edgecolor="black")
-    ax.set_title("shapes per class " + label)
+    ax.set_title("shapes per class")
     ax.set_xlabel("# shapes")
     ax.set_ylabel("class")
     ax.tick_params(axis="y", labelsize=7)

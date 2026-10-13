@@ -45,6 +45,7 @@ Ten shapes are held out of the database to act as unseen queries; they are liste
 | Step | Command | Output |
 |---|---|---|
 | 1 viewer | `python main.py [mesh.obj]` | interactive viewer (mouse: rotate, zoom, pan; `W` toggles the wireframe) |
+| | `python show_viewer_modes.py [Class/shape]` | `out/viewer_modes.png` (one shape shaded, with wireframe and as wireframe only) |
 | 2 statistics, resampling, normalisation | `python preprocessing.py` | `out/shape_stats*.csv`, `out/resampled/`, `out/normalised/`, histograms |
 | | `python preprocessing.py normalise` | only redo the normalisation and its check |
 | 2 inspection | `python show_average_outliers.py [-nogui]`, `python show_resampled.py [Class/shape ...] [-nogui]` | viewer windows; `out/average_and_outliers.png`, `out/resampling_examples.png` (original vs resampled, wireframe) |
@@ -58,7 +59,7 @@ Ten shapes are held out of the database to act as unseen queries; they are liste
 | | `python normalise_features.py Gun/D00204 [log\|standard\|minmax]` | prints the normalised features of one shape |
 | 4 choosing the distance | `python compare_distances.py`, `python threshold_choice.py` | `out/distance_comparison.*`, `out/threshold_choice.png` |
 | 5 kd-tree check | `python knn.py -check` | agreement with brute force and timings |
-| 5 t-SNE | `python tsne.py [-redo] [-nogui]` | `out/tsne.png`; hover a point for its name and class, click it to open the shape |
+| 5 t-SNE | `python tsne.py [-redo] [-nogui] [-brush Class/shape]` | `out/tsne.png`; hover a point for its name and class, click it to open the shape; `-brush` saves the plot with that shape hovered as `out/tsne_brush.png` |
 | 6 evaluation | `python evaluate.py [-redo]` | `out/evaluation_*.csv`, `out/evaluation_classes.png` |
 | | `python evaluation_details.py` | prints the other numbers quoted in the report: perfect and empty top-10 shares, duplicates, flagged shapes, what a threshold of 0.35 returns, and which classes are confused with each other |
 
