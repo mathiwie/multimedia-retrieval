@@ -59,8 +59,8 @@ def main():
     twin.plot(thresholds, correct, marker="s", color="seagreen", label="share in query's class")
     twin.set_ylabel("share in query's class")
     ax[2].set_title("what a threshold returns")
-    ax[2].legend(loc="upper left")
-    twin.legend(loc="lower right")
+    lines = ax[2].get_lines() + twin.get_lines()
+    ax[2].legend(lines, [line.get_label() for line in lines], loc="center right")
 
     plt.tight_layout()
     fname = os.path.join(out_dir, "threshold_choice.png")

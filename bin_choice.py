@@ -58,10 +58,11 @@ def main():
     ax[1].set_ylabel("L1 distance")
     for a in ax:
         a.set_xscale("log")
-        a.set_xlabel(f"number of bins B (dashed: sqrt(N) = {int(np.sqrt(ft.samples))} for N = {ft.samples:,} samples, "
-                     f"{int(np.sqrt(per_vertex_n))} for N = {per_vertex_n:,} vertices)")
-        a.axvline(np.sqrt(ft.samples), color="black", linestyle="--")
-        a.axvline(np.sqrt(per_vertex_n), color="gray", linestyle="--")
+        a.set_xlabel("number of bins B")
+        a.axvline(np.sqrt(ft.samples), color="black", linestyle="--",
+                  label=f"sqrt({ft.samples:,}) = {int(np.sqrt(ft.samples))}")
+        a.axvline(np.sqrt(per_vertex_n), color="gray", linestyle="--",
+                  label=f"sqrt({per_vertex_n:,}) = {int(np.sqrt(per_vertex_n))}")
         a.legend(fontsize=8)
     plt.tight_layout()
     fname = os.path.join(out_dir, "bin_choice.png")
