@@ -60,6 +60,7 @@ Ten shapes are held out of the database to act as unseen queries; they are liste
 | 5 kd-tree check | `python knn.py -check` | agreement with brute force and timings |
 | 5 t-SNE | `python tsne.py [-redo] [-nogui]` | `out/tsne.png`; hover a point for its name and class, click it to open the shape |
 | 6 evaluation | `python evaluate.py [-redo]` | `out/evaluation_*.csv`, `out/evaluation_classes.png` |
+| | `python evaluation_details.py` | prints the other numbers quoted in the report: perfect and empty top-10 shares, duplicates, flagged shapes, what a threshold of 0.35 returns, and which classes are confused with each other |
 
 To rebuild everything from the original database, run in this order:
 `preprocessing.py`, `features.py`, `normalise_features.py`, then any of the step 4-6 scripts.
