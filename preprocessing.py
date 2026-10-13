@@ -62,7 +62,7 @@ def walk_shapes(root):
         class_folder = os.path.join(root, class_name)
         if not os.path.isdir(class_folder):
             continue
-        objs = glob.glob(os.path.join(class_folder, "**", "*.obj"), recursive=True)
+        objs = sorted(glob.glob(os.path.join(class_folder, "**", "*.obj"), recursive=True))
         for obj_path in objs:
             yield obj_path, class_name
 
