@@ -13,6 +13,7 @@ stats_csv_after = os.path.join(out_dir, "shape_stats_after_resample.csv")
 normalised_dir = os.path.join(out_dir, "normalised")
 average_outliers_csv = os.path.join(out_dir, "average_and_outliers.csv")
 normalisation_csv = os.path.join(out_dir, "normalisation_check.csv")
+normalisation_before_csv = os.path.join(out_dir, "normalisation_check_before.csv")
 small_thresh = 100
 big_thresh = 50000
 target_verts = 7500
@@ -351,7 +352,7 @@ def normalise_all(root, dest):
             print("couldnt normalise:", path, "-", e)
     print("done normalising : ", dest)
 
-def check_normalisation(root):
+def check_normalisation(root, csv_path=normalisation_csv):
     rows = []
     for path, cls in walk_shapes(root):
         mesh = o3d.io.read_triangle_mesh(path)
@@ -376,44 +377,52 @@ def check_normalisation(root):
                                    or eigenvalues[2] / eigenvalues[1] > 0.99),
         })
     df = pd.DataFrame(rows)
-    print(df.describe())
-    misaligned = df[["major_x_cos", "medium_y_cos", "minor_z_cos"]].min(axis=1) < 0.99
-    negative = (df[["moment_x", "moment_y", "moment_z"]] < 0).any(axis=1)
-    tiny = (df[["moment_x", "moment_y", "moment_z"]].abs().where(
-        df[["moment_x", "moment_y", "moment_z"]] < 0) < 1e-3).any(axis=1)
-    print(f"shapes with two (near) equal eigenvalues, so PCA axes are not unique: {df['ambiguous_axes'].sum()}")
-    print(f"shapes with an axis off by more than |cos| 0.99: {misaligned.sum()}"
-          f" (of which {(misaligned & df['ambiguous_axes']).sum()} have ambiguous axes)")
-    print(f"shapes with a negative flip moment: {negative.sum()}"
-          f" (of which {tiny.sum()} are within 1e-3 of 0, i.e. symmetric along that axis)")
-    save_stats(df, normalisation_csv)
-    make_normalisation_histograms(df)
+    cos = df[["major_x_cos", "medium_y_cos", "minor_z_cos"]]
+    moments = df[["moment_x", "moment_y", "moment_z"]]
+    off = 1 - cos.min(axis=1)
+    print(f"{root}: {len(df)} shapes")
+    print(f"  barycenter distance to origin: median {df['barycenter_dist'].median():.2e}, max {df['barycenter_dist'].max():.2e}")
+    print(f"  shapes with two (near) equal eigenvalues, so PCA axes are not unique: {df['ambiguous_axes'].sum()}")
+    for limit in (1e-6, 1e-3, 1e-2):
+        print(f"  shapes with an axis off by more than 1 - |cos| = {limit:g}: {(off > limit).sum()}"
+              f" (of which {(off[df['ambiguous_axes']] > limit).sum()} have ambiguous axes)")
+    print(f"  shapes with a negative flip moment: {(moments < 0).any(axis=1).sum()}"
+          f" (of which {(moments.abs().where(moments < 0) < 1e-3).any(axis=1).sum()} are within 1e-3 of 0)")
+    print(f"  longest side: min {df['longest_side'].min():.6g}, max {df['longest_side'].max():.6g}")
+    save_stats(df, csv_path)
     return df
 
-def make_normalisation_histograms(df):
+def make_normalisation_histograms(before, after):
     fig, ax = plt.subplots(2, 3, figsize=(17, 9))
     ax = ax.ravel()
-    ax[0].hist(df["barycenter_dist"], bins=50, range=(0, 0.05), color="steelblue", edgecolor="black")
-    ax[0].set_title("1. translate: barycenter distance to origin")
-    ax[0].set_xlabel("distance (unit cube side = 1)")
-    for a, column, eigen, axis in zip(ax[1:4], ["major_x_cos", "medium_y_cos", "minor_z_cos"],
-                                      ["e1 (major)", "e2 (medium)", "e3 = e1 x e2 (minor)"], "xyz"):
-        a.hist(df[column], bins=50, range=(0, 1 + 1e-9), color="seagreen", edgecolor="black")
+    styles = [("before", before, "lightgray", 1.0), ("after", after, None, 0.75)]
+    log_bins = lambda lo, hi: np.logspace(lo, hi, 60)
+    panels = [
+        (ax[0], lambda d: d["barycenter_dist"].clip(1e-16), log_bins(-16, 10), "steelblue",
+         "1. translate: barycenter distance to origin", "distance"),
+        (ax[1], lambda d: (1 - d["major_x_cos"]).clip(1e-16), log_bins(-16, 0), "seagreen",
+         "2. align: 1 - |e1 . x| (major)", "1 - |cos angle| (0 = aligned)"),
+        (ax[2], lambda d: (1 - d["medium_y_cos"]).clip(1e-16), log_bins(-16, 0), "seagreen",
+         "2. align: 1 - |e2 . y| (medium)", "1 - |cos angle| (0 = aligned)"),
+        (ax[3], lambda d: (1 - d["minor_z_cos"]).clip(1e-16), log_bins(-16, 0), "seagreen",
+         "2. align: 1 - |e3 . z| for e3 = e1 x e2 (minor)", "1 - |cos angle| (0 = aligned)"),
+        (ax[4], lambda d: np.sign(d[["moment_x", "moment_y", "moment_z"]].min(axis=1)), np.linspace(-1.5, 1.5, 4),
+         "darkorange", "3. flip: sign of the smallest moment over x, y, z", "sign (+1 = all moments positive)"),
+        (ax[5], lambda d: d["longest_side"], log_bins(-2, 10), "indianred",
+         "4. scale: longest bounding box side", "length"),
+    ]
+    for a, value, bins, color, title, xlabel in panels:
+        for label, data, fill, alpha in styles:
+            a.hist(value(data), bins=bins, color=fill or color, alpha=alpha, edgecolor="black", linewidth=0.3,
+                   label=f"{label} normalisation")
+        if bins[0] > 0:
+            a.set_xscale("log")
         a.set_yscale("log")
-        a.set_title(f"2. align: |e . {axis}| for {eigen}")
-        a.set_xlabel("|cos angle| (1 = aligned)")
-    smallest_moment = df[["moment_x", "moment_y", "moment_z"]].min(axis=1)
-    ax[4].hist(smallest_moment, bins=50, color="darkorange", edgecolor="black")
-    ax[4].set_yscale("log")
-    ax[4].axvline(0, color="black", linestyle="--")
-    ax[4].set_title("3. flip: smallest moment over x, y, z")
-    ax[4].set_xlabel("moment (>= 0 = flipped correctly)")
-    ax[5].hist(df["longest_side"], bins=51, range=(0.9, 1.1), color="indianred", edgecolor="black")
-    ax[5].set_title("4. scale: longest bounding box side")
-    ax[5].set_xlabel("length")
-    for a in ax:
+        a.set_title(title)
+        a.set_xlabel(xlabel)
         a.set_ylabel("# shapes")
-        a.ticklabel_format(axis="x", useOffset=False)
+        a.legend(fontsize=8)
+    ax[4].set_xticks([-1, 0, 1])
     plt.tight_layout()
     fname = os.path.join(out_dir, "histograms_normalised.png")
     plt.savefig(fname, dpi=150)
@@ -423,8 +432,8 @@ def make_normalisation_histograms(df):
 if __name__ == "__main__":
     import sys
     os.makedirs(out_dir, exist_ok=True)
-    only_normalise = len(sys.argv) > 1 and sys.argv[1] == "normalise"
-    if not only_normalise:
+    mode = sys.argv[1] if len(sys.argv) > 1 else "all"
+    if mode == "all":
         print("analyzing shapes...")
         stats = make_stats_df(db_path)
         save_stats(stats, stats_csv)
@@ -440,6 +449,9 @@ if __name__ == "__main__":
         save_stats(stats2, stats_csv_after)
         print_stats_summary(stats2)
         make_histograms(stats2, label="after")
-    print("normalising...")
-    normalise_all(resampled_dir, normalised_dir)
-    check_normalisation(normalised_dir)
+    if mode in ("all", "normalise"):
+        print("normalising...")
+        normalise_all(resampled_dir, normalised_dir)
+    before = check_normalisation(resampled_dir, normalisation_before_csv)
+    after = check_normalisation(normalised_dir)
+    make_normalisation_histograms(before, after)

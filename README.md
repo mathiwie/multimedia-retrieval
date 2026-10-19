@@ -45,16 +45,22 @@ Ten shapes are held out of the database to act as unseen queries; they are liste
 | Step | Command | Output |
 |---|---|---|
 | 1 viewer | `python main.py [mesh.obj]` | interactive viewer (mouse: rotate, zoom, pan; `W` toggles the wireframe) |
-| | `python show_viewer_modes.py [Class/shape]` | `out/viewer_modes.png` (one shape shaded, with wireframe and as wireframe only) |
+| | `python show_viewer_modes.py [Class/shape] [Class/shape]` | `out/viewer_modes.png` (display modes), `out/viewer_manipulation.png` (rotate, zoom, pan), `out/viewer_variety.png` (smallest, largest and out-of-scale shapes) |
 | 2 statistics, resampling, normalisation | `python preprocessing.py` | `out/shape_stats*.csv`, `out/resampled/`, `out/normalised/`, histograms |
 | | `python preprocessing.py normalise` | only redo the normalisation and its check |
+| | `python preprocessing.py check` | only redo the normalisation check: statistics before and after, `out/normalisation_check*.csv`, `out/histograms_normalised.png` |
+| 2 cleaning | `python cleaning_check.py` | vertices merged and faces removed by each cleaning step, `out/cleaning_check.csv` |
 | 2 inspection | `python show_average_outliers.py [-nogui]`, `python show_resampled.py [Class/shape ...] [-nogui]` | viewer windows; `out/average_and_outliers.png`, `out/resampling_examples.png` (original vs resampled, wireframe) |
 | 3 normalisation check | `python show_normalised.py [Class/shape ...]`, `python show_normalisation_steps.py [Class/shape ...]` | before/after viewer windows; `out/normalisation_steps.png` (each step with a fixed camera) |
 | 3 features | `python features.py` | `out/features.csv`, `out/skipped_shapes.csv` |
 | | `python features.py Gun/D00204` | prints the features of one shape |
 | 3 checks | `python validate_features.py`, `python bin_choice.py`, `python show_descriptors.py [view]` | descriptor checks on simple shapes, bin choice, `out/descriptor_examples.png` |
+| | `python show_class_histograms.py [Class ...]` | `out/class_histograms.png` (every histogram descriptor of every shape of a few classes), within/between-class distances in `out/class_histogram_spread.csv` |
+| | `python d1_surface.py` | D1 from the vertices vs from random surface points, and retrieval with each, `out/d1_surface*.csv` |
 | 3 curvature | `python show_curvature.py [Class/shape ...]`, `python curvature_choice.py` | `out/curvature_examples.png` (meshes coloured by curvature); validation on primitives and the radius / robustness comparison, `out/curvature_choice.csv` |
-| 3 volume | `python volume_check.py` | voxel resolution convergence, timing and multi-ray inside test, `out/volume_check.csv` |
+| | `python curvature_sign.py` | retrieval with the signed, the unsigned and no curvature histogram, `out/curvature_sign.csv` |
+| 3 volume | `python volume_check.py` | voxel resolution convergence, timing and number of ray directions, `out/volume_check.csv` |
+| | `python volume_leak.py [-redo]` | leakage of every shape, voxels vs tetrahedra vs convex hull, and retrieval for each leak limit, `out/volume_leak*.csv`, `out/volume_leak.png` (the scan of all shapes takes about an hour) |
 | 4 feature normalisation | `python normalise_features.py` | `out/features_{log,standard,minmax}.csv`, `out/holdout.csv` |
 | | `python normalise_features.py Gun/D00204 [log\|standard\|minmax]` | prints the normalised features of one shape |
 | 4 choosing the distance | `python compare_distances.py`, `python threshold_choice.py` | `out/distance_comparison.*`, `out/threshold_choice.png` |

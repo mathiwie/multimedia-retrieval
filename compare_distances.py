@@ -19,12 +19,8 @@ def precision_at_k(matrix, labels, k, rows=None):
 
 
 def tune_test_check(table, weightings, k=10, seed=0):
-    rng = np.random.default_rng(seed)
     labels = table["class"].to_numpy()
-    tune = np.zeros(len(table), dtype=bool)
-    for cls in np.unique(labels):
-        members = np.flatnonzero(labels == cls)
-        tune[rng.choice(members, size=len(members) // 2, replace=False)] = True
+    tune = tune_mask(labels, seed)
     scores = {}
     for name, weights in weightings.items():
         scales = ds.fit_scales(table)
@@ -37,6 +33,26 @@ def tune_test_check(table, weightings, k=10, seed=0):
         print(f"  {name:16s} tune {on_tune:.3f}  test {on_test:.3f}{'  <- chosen on tune' if name == chosen else ''}")
     print(f"chosen on the tune half: {chosen}, precision@{k} on the unseen test half {scores[chosen][1]:.3f}")
     return chosen, scores
+
+
+def tune_mask(labels, seed=0):
+    rng = np.random.default_rng(seed)
+    tune = np.zeros(len(labels), dtype=bool)
+    for cls in np.unique(labels):
+        members = np.flatnonzero(labels == cls)
+        tune[rng.choice(members, size=len(members) // 2, replace=False)] = True
+    return tune
+
+
+def feature_scores(features, weights, k=10):
+    database, _ = nf.split_holdout(features)
+    table = nf.normalised_table(database, nf.fit(database, "log")).reset_index(drop=True)
+    labels = table["class"].to_numpy()
+    matrix = ds.distances_to(table, table, ds.fit_scales(table), weights)
+    tune = tune_mask(labels)
+    return {f"precision@{k}": precision_at_k(matrix.copy(), labels, k),
+            "tune": precision_at_k(matrix.copy(), labels, k, np.flatnonzero(tune)),
+            "test": precision_at_k(matrix.copy(), labels, k, np.flatnonzero(~tune))}
 
 
 def evaluate(database, histogram_metric, weights):

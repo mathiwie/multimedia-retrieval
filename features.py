@@ -14,7 +14,9 @@ skipped_csv = os.path.join(out_dir, "skipped_shapes.csv")
 samples = 100_000   
 bins = 40           
 seed = 0            
-volume_res = 128    
+volume_res = 128
+volume_rays = 5
+leak_limit = 1.0
 curvature_max = np.sqrt(8)
 curvature_radius = 0.08
 curvature_min_faces = 4
@@ -134,32 +136,50 @@ def closed_mesh_volume(mesh):
     a, b, c = verts[tris[:, 0]], verts[tris[:, 1]], verts[tris[:, 2]]
     return abs(np.einsum("ij,ij->i", a, np.cross(b, c)).sum() / 6)
 
-def mesh_volume(mesh, res=volume_res, rays=1):
+def ray_directions(rays=volume_rays):
+    d = np.random.default_rng(seed).normal(size=(rays, 3))
+    return d / np.linalg.norm(d, axis=1, keepdims=True)
+
+def voxel_votes(mesh, res=volume_res, rays=volume_rays):
     scene = o3d.t.geometry.RaycastingScene()
     scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(mesh))
     verts = np.asarray(mesh.vertices)
     lo, hi = verts.min(axis=0), verts.max(axis=0)
     step = (hi - lo).max() / res
     axes = [np.arange(lo[i] + step / 2, hi[i] + step / 2, step) for i in range(3)]
-    points = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3)
-    inside = scene.compute_occupancy(o3d.core.Tensor(points.astype(np.float32)), nsamples=rays).numpy()
-    return float(inside.sum()) * step ** 3
+    points = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3).astype(np.float32)
+    votes = np.zeros((rays, len(points)), dtype=bool)
+    for i, d in enumerate(ray_directions(rays)):
+        cast = np.hstack([points, np.broadcast_to(d.astype(np.float32), points.shape)])
+        votes[i] = scene.count_intersections(o3d.core.Tensor(cast)).numpy() % 2 == 1
+    return votes, step ** 3
+
+def leakage(votes):
+    count = votes.sum(axis=0)
+    possible = count > 0
+    return float((possible & (count < len(votes))).sum() / possible.sum()) if possible.any() else 1.0
+
+def mesh_volume(mesh, res=volume_res, rays=volume_rays):
+    votes, cell = voxel_votes(mesh, res, rays)
+    return float((votes.sum(axis=0) > rays // 2).sum()) * cell, leakage(votes)
+
+def settle_volume(volume, leak, area, hull_volume, hull_area, limit=None):
+    limit = leak_limit if limit is None else limit
+    compactness = area ** 3 / (36 * np.pi * volume ** 2) if volume > 0 else np.nan
+    fallback = not volume > 0 or volume > hull_volume or leak > limit or compactness < 1
+    if fallback:
+        volume = hull_volume
+        compactness = hull_area ** 3 / (36 * np.pi * volume ** 2) if volume > 0 else np.nan
+    return volume, compactness, fallback
 
 def global_features(mesh):
-    verts = np.asarray(mesh.vertices)
     area = mesh.get_surface_area()
-    volume = mesh_volume(mesh)
+    voxel_volume, leak = mesh_volume(mesh)
     hull, _ = mesh.compute_convex_hull()
     hull_verts = np.asarray(hull.vertices)
     hull_volume = closed_mesh_volume(hull)
     diameter = np.sqrt(((hull_verts[:, None, :] - hull_verts[None, :, :]) ** 2).sum(-1).max())
-
-    compactness = area ** 3 / (36 * np.pi * volume ** 2) if volume > 0 else np.nan
-    hull_fallback = not volume > 0 or volume > hull_volume or compactness < 1
-    if hull_fallback:
-        volume = hull_volume
-        hull_area = hull.get_surface_area()
-        compactness = hull_area ** 3 / (36 * np.pi * volume ** 2) if volume > 0 else np.nan
+    volume, compactness, hull_fallback = settle_volume(voxel_volume, leak, area, hull_volume, hull.get_surface_area())
 
     obb_volume = mesh.get_oriented_bounding_box().volume()
     eigenvalues, _ = principal_axes(mesh)
@@ -172,6 +192,7 @@ def global_features(mesh):
         "convexity": volume / hull_volume if hull_volume > 0 else np.nan,
         "eccentricity": eigenvalues[0] / eigenvalues[2] if eigenvalues[2] > 0 else np.nan,
         "volume": volume,
+        "leakage": leak,
         "hull_fallback": bool(hull_fallback),
     }
 
