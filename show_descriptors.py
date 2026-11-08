@@ -18,7 +18,7 @@ descriptors = {
     "diameter": "fits in a ball vs long across the diagonal",
     "convexity": "spiky or hollow vs solid and convex",
     "eccentricity": "bulky vs thin and long",
-    "curvature": "flat or concave vs strongly convex",
+    "curvature": "flat vs strongly bent everywhere",
 }
 
 def caption(row, name, end):
@@ -33,8 +33,10 @@ def main(view=False):
     os.makedirs(examples_dir, exist_ok=True)
     data = pd.read_csv(ft.features_csv)
     curv_cols = [f"CURV_{i}" for i in range(ft.n_bins("CURV"))]
-    centres = ft.bin_centres("CURV")
-    data["curvature"] = (data[curv_cols].values * centres).sum(axis=1)
+    # mean of |curvature|: the sign is unreliable on open sheets (a wrongly oriented part would pull
+    # the signed mean towards 0), and how strongly the surface bends is what we want to show here
+    centres = np.abs(ft.bin_centres("CURV"))
+    data["curvature"] = (data[curv_cols].to_numpy() * centres).sum(axis=1)
 
     picked, images, captions = [], [], []
     for name, story in descriptors.items():

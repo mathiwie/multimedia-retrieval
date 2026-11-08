@@ -11,5 +11,5 @@ convexity,low,MultiSeat/m774,0.0180882125187799,MultiSeat
 convexity,high,House/D00889,0.8867337478632272,House
 eccentricity,low,House/D00325,1.437620784240322,House
 eccentricity,high,Tool/m1106,935.0219883901176,Tool
-curvature,low,Bird/m28,0.05298126906841649,Bird
-curvature,high,Humanoid/m266,1.413965212674337,Humanoid
+curvature,low,Vase/m527,0.25624170029651816,Vase
+curvature,high,FloorLamp/m620,1.5233218633608656,FloorLamp
