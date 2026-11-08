@@ -20,13 +20,11 @@ def histograms(values, name, b):
 def main():
     random.seed(0)
     paths = random.sample([p for p, _ in walk_shapes(normalised_dir)], shapes_used)
-    runs, vertex_counts = [], []
+    runs = []
     for path in paths:
         mesh = o3d.io.read_triangle_mesh(path)
-        vertex_counts.append(len(mesh.vertices))
         runs.append([ft.shape_property_values(mesh, np.random.default_rng(s)) for s in (0, 1)])
-    per_vertex_n = min(vertex_counts)
-    sample_count = {name: (per_vertex_n if name == "D1" else ft.samples) for name in list(ft.ranges)[:5]}
+    sample_count = {name: len(runs[0][0][name]) for name in list(ft.ranges)[:5]}
 
     names = list(ft.ranges)[:5]
     fig, ax = plt.subplots(1, 2, figsize=(13, 5))
@@ -61,8 +59,6 @@ def main():
         a.set_xlabel("number of bins B")
         a.axvline(np.sqrt(ft.samples), color="black", linestyle="--",
                   label=f"sqrt({ft.samples:,}) = {int(np.sqrt(ft.samples))}")
-        a.axvline(np.sqrt(per_vertex_n), color="gray", linestyle="--",
-                  label=f"sqrt({per_vertex_n:,}) = {int(np.sqrt(per_vertex_n))}")
         a.legend(fontsize=8)
     plt.tight_layout()
     fname = os.path.join(out_dir, "bin_choice.png")
@@ -70,14 +66,14 @@ def main():
     plt.close(fig)
     print("saved", fname)
     print("smallest B reaching 98% of the best signal while staying below sqrt(N), per descriptor:", best)
-    sampled = {name: ratio for name, ratio in at_bins.items() if name != "D1"}
-    print(f"we use a single B = {ft.bins} for all of them: the sampling noise there is at most"
-          f" {max(sampled.values()):.1%} of the distance between shapes ({max(sampled, key=sampled.get)}),"
-          f" D1 uses every vertex once so it has no sampling noise, and B stays below sqrt(N) for every"
-          f" histogram: sqrt({ft.samples:,}) = {int(np.sqrt(ft.samples))} for A3 and D2-D4,"
-          f" sqrt({per_vertex_n:,}) = {int(np.sqrt(per_vertex_n))} for D1 (the fewest vertices of any shape here)"
-          f" and sqrt({ft.curvature_samples:,}) = {int(np.sqrt(ft.curvature_samples))} for the curvature samples;"
-          f" the feature vector stays at {6 * ft.bins} histogram values")
+    print(f"we use a single B = {ft.bins} for A3 and D1-D4: the sampling noise there is at most"
+          f" {max(at_bins.values()):.1%} of the distance between shapes ({max(at_bins, key=at_bins.get)}),"
+          f" and B stays below sqrt(N) for every histogram: sqrt({ft.samples:,}) = {int(np.sqrt(ft.samples))}"
+          f" surface points for A3 and D1-D4 and sqrt({ft.curvature_samples:,}) = {int(np.sqrt(ft.curvature_samples))}"
+          f" for the curvature samples (B = {ft.n_bins('CURV')}); the feature vector has"
+          f" {sum(ft.n_bins(n) for n in ft.ranges)} histogram values"
+          f" (expected sampling noise at B = {ft.bins}: at most 2 sqrt(B / (pi N)) ="
+          f" {2 * np.sqrt(ft.bins / (np.pi * ft.samples)):.4f} in L1)")
 
 
 if __name__ == "__main__":

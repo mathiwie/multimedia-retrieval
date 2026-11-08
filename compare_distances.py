@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 
 import distance as ds
 import normalise_features as nf
+import query as qr
 from preprocessing import out_dir, save_stats
 
 results_csv = os.path.join(out_dir, "distance_comparison.csv")
@@ -81,10 +82,11 @@ def main():
     for kind, table in tables.items():
         for metric in ("euclidean", "cosine", "emd"):
             for weight_name, weights in weightings.items():
-                balanced = weight_name in ("all blocks", "globals x6")
+                chosen = f"globals x{qr.globals_weight:g}"
+                balanced = weight_name in ("all blocks", chosen)
                 if not balanced and (kind != "log" or metric != "euclidean"):
                     continue
-                if balanced and weight_name == "globals x6" and kind != "log":
+                if balanced and weight_name == chosen and kind != "log":
                     continue
                 scores = evaluate(table, metric, weights)
                 rows.append({"normalisation": kind, "histogram distance": metric,

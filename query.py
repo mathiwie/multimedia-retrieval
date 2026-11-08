@@ -14,7 +14,7 @@ from preprocessing import (out_dir, normalised_dir, clean_mesh, normalise_mesh,
 
 normalisation = "log"
 histogram_metric = "euclidean"
-globals_weight = 6.0
+globals_weight = 3.0
 default_k = 5
 examples_dir = os.path.join(out_dir, "query_examples")
 

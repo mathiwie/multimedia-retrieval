@@ -11,10 +11,11 @@ repo_dir = os.path.dirname(os.path.abspath(__file__))
 check_csv = os.path.join(out_dir, "resampling_check.csv")
 n = 3
 
-clustered = ["House/D00286", "House/D00574", "House/D00901"]
+# the shapes that quadric decimation could not bring below 10,000 vertices (see the output of preprocessing.py)
+clustered = ["House/D00286", "House/D00901"]
 figure_shapes = [("refined", "AircraftBuoyant/m1337"), ("refined", "Vase/m541"),
                  ("simplified", "Biplane/m1120"), ("simplified", "PlantIndoors/D00080"),
-                 ("vertex clustering", "House/D00574"), ("vertex clustering", "House/D00901")]
+                 ("vertex clustering", "House/D00286"), ("vertex clustering", "House/D00901")]
 
 def load_stats(path):
     df = pd.read_csv(os.path.join(repo_dir, path))

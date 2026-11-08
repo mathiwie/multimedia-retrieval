@@ -14,6 +14,7 @@ from preprocessing import out_dir, save_stats
 
 tsne_csv = os.path.join(out_dir, "tsne.csv")
 perplexity = 30
+markers = ["o", "s", "^", "v", "D", "P", "X"]
 
 
 def embed_2d(seed=0):
@@ -29,12 +30,20 @@ def embed_2d(seed=0):
 
 def plot(points, gui=True, brush=None):
     classes = sorted(points["class"].unique())
-    code = points["class"].map({c: i for i, c in enumerate(classes)}).to_numpy()
-    fig, ax = plt.subplots(figsize=(12, 10))
-    dots = ax.scatter(points["x"], points["y"], c=code, cmap="nipy_spectral", s=10)
+    fig, ax = plt.subplots(figsize=(17, 10))
+    # 69 classes are too many for colours alone, so every class gets its own colour and marker pair
+    styles = [(colour, marker) for marker in markers for colour in plt.get_cmap("tab10").colors]
+    for cls, (colour, marker) in zip(classes, styles):
+        part = points[points["class"] == cls]
+        ax.scatter(part["x"], part["y"], color=colour, marker=marker, s=12, linewidths=0,
+                   label=f"{cls} ({len(part)})")
+    # an invisible copy of all points, in the order of the table, for hovering and clicking
+    dots = ax.scatter(points["x"], points["y"], s=12, alpha=0)
     for cls, part in points.groupby("class"):
         ax.text(part["x"].median(), part["y"].median(), cls, fontsize=8, alpha=0.8,
                 ha="center", bbox=dict(boxstyle="square,pad=0.1", fc="white", alpha=0.5, lw=0))
+    ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1), ncol=2, fontsize=7, markerscale=1.6,
+              frameon=False, handletextpad=0.2, columnspacing=0.8, borderaxespad=0)
     ax.set_title(f"tsne of {len(points)} shapes, {len(classes)} classes")
     ax.set_xticks([])
     ax.set_yticks([])

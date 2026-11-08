@@ -1,0 +1,7 @@
+query,knn equals brute force,largest distance difference,5-nn in class,r-nn results (r = 0.4),r-nn share in class
+Gun/D00204,True,0.0,3,166,0.1144578313253012
+Humanoid/m198,True,0.0,3,245,0.3224489795918367
+Car/D00260,True,0.0,3,103,0.17475728155339806
+Bicycle/D00974,True,0.0,3,16,0.875
+Vase/m541,True,0.0,1,0,
+RoundTable/m935 (file),True,0.0,1,13,0.3076923076923077

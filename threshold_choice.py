@@ -4,9 +4,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 import distance as ds
+import query as qr
 from preprocessing import out_dir
 
-best = {"normalisation": "log", "histogram metric": "euclidean", "globals weight": 6.0}
+best = {"normalisation": "log", "histogram metric": "euclidean", "globals weight": qr.globals_weight}
 
 
 def main():

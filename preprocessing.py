@@ -142,12 +142,26 @@ def find_average_and_outliers(df, n=3, lo=small_thresh, hi=big_thresh):
     print(f"big outliers (>{hi} verts or faces): {len(big)}")
     return picked
 
+def remove_reversed_triangles(mesh):
+    # open3d's remove_duplicated_triangles only removes copies with the same winding,
+    # so a triangle stored once per side, (i, j, k) and (i, k, j), survives it
+    tris = np.asarray(mesh.triangles)
+    if len(tris) == 0:
+        return mesh
+    _, first = np.unique(np.sort(tris, axis=1), axis=0, return_index=True)
+    if len(first) < len(tris):
+        drop = np.ones(len(tris), dtype=bool)
+        drop[first] = False
+        mesh.remove_triangles_by_mask(drop)
+    return mesh
+
 def clean_mesh(mesh):
     if num_verts(mesh) > 0:
         extent = np.max(mesh.get_max_bound() - mesh.get_min_bound())
         mesh.merge_close_vertices(extent * 1e-6)
     mesh.remove_duplicated_vertices()
     mesh.remove_duplicated_triangles()
+    remove_reversed_triangles(mesh)
     mesh.remove_degenerate_triangles()
     mesh.remove_unreferenced_vertices()
     return mesh
@@ -298,6 +312,19 @@ def principal_axes(mesh):
     order = np.argsort(eigenvalues)[::-1]
     return eigenvalues[order], eigenvectors[:, order]
 
+def area_barycenter(mesh):
+    # centre of mass of the surface as a thin shell: face centroids weighted by face area,
+    # so it does not depend on how the vertices are spread over the surface
+    verts = np.asarray(mesh.vertices)
+    tris = np.asarray(mesh.triangles)
+    if len(tris) == 0:
+        return verts.mean(axis=0)
+    a, b, c = verts[tris[:, 0]], verts[tris[:, 1]], verts[tris[:, 2]]
+    areas = np.linalg.norm(np.cross(b - a, c - a), axis=1) / 2
+    if areas.sum() == 0:
+        return verts.mean(axis=0)
+    return (areas[:, None] * (a + b + c) / 3).sum(axis=0) / areas.sum()
+
 def flip_moments(mesh):
     verts = np.asarray(mesh.vertices)
     tris = np.asarray(mesh.triangles)
@@ -307,7 +334,7 @@ def flip_moments(mesh):
 def normalisation_steps(mesh):
     steps = [("original", o3d.geometry.TriangleMesh(mesh))]
     verts = np.asarray(mesh.vertices)
-    verts = verts - verts.mean(axis=0)
+    verts = verts - area_barycenter(mesh)
     mesh.vertices = o3d.utility.Vector3dVector(verts)
     steps.append(("translated", o3d.geometry.TriangleMesh(mesh)))
 
@@ -359,7 +386,7 @@ def check_normalisation(root, csv_path=normalisation_csv):
         verts = np.asarray(mesh.vertices)
         if verts.shape[0] == 0:
             continue
-        center = verts.mean(axis=0)
+        center = area_barycenter(mesh)
         eigenvalues, axes = principal_axes(mesh)
         moments = flip_moments(mesh)
         size = verts.max(axis=0) - verts.min(axis=0)

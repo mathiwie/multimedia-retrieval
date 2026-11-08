@@ -32,9 +32,8 @@ def key(row):
 def main(view=False):
     os.makedirs(examples_dir, exist_ok=True)
     data = pd.read_csv(ft.features_csv)
-    lo, hi = ft.ranges["CURV"]
-    curv_cols = [f"CURV_{i}" for i in range(ft.bins)]
-    centres = lo + (np.arange(ft.bins) + 0.5) * (hi - lo) / ft.bins
+    curv_cols = [f"CURV_{i}" for i in range(ft.n_bins("CURV"))]
+    centres = ft.bin_centres("CURV")
     data["curvature"] = (data[curv_cols].values * centres).sum(axis=1)
 
     picked, images, captions = [], [], []

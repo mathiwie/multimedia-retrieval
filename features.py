@@ -6,22 +6,24 @@ import open3d as o3d
 from scipy.sparse import csr_matrix
 from scipy.spatial import cKDTree
 from scipy.sparse.csgraph import dijkstra
-from preprocessing import out_dir, normalised_dir, walk_shapes, save_stats, principal_axes, split_long_edges
+from preprocessing import (out_dir, normalised_dir, walk_shapes, save_stats, principal_axes, split_long_edges,
+                           area_barycenter)
 
 features_csv = os.path.join(out_dir, "features.csv")
 skipped_csv = os.path.join(out_dir, "skipped_shapes.csv")
 
-samples = 100_000   
-bins = 40           
-seed = 0            
+samples = 100_000
+bins = 40
+curvature_bins = 41     # odd, so that flat regions (value 0) get a bin of their own in the middle
+seed = 0
 volume_res = 128
 volume_rays = 5
 leak_limit = 1.0
 curvature_max = np.sqrt(8)
-curvature_radius = 0.08
+curvature_radius = 0.05
 curvature_min_faces = 4
 curvature_flat = 1e-3
-curvature_edge = 1.0
+curvature_edge = 1.0     # split edges longer than the patch radius before the curvature
 curvature_samples = 10_000
 
 ranges = {
@@ -33,6 +35,13 @@ ranges = {
     "CURV": (-curvature_max, curvature_max),
 }
 
+def n_bins(name):
+    return curvature_bins if name == "CURV" else bins
+
+def bin_centres(name):
+    lo, hi = ranges[name]
+    return lo + (np.arange(n_bins(name)) + 0.5) * (hi - lo) / n_bins(name)
+
 def surface_graph(verts, tris):
     ends = np.unique(np.sort(tris[:, [[0, 1], [1, 2], [2, 0]]].reshape(-1, 2), axis=1), axis=0)
     lengths = np.maximum(np.linalg.norm(verts[ends[:, 0]] - verts[ends[:, 1]], axis=1), 1e-12)
@@ -40,9 +49,13 @@ def surface_graph(verts, tris):
     return csr_matrix((np.r_[lengths, lengths], (np.r_[ends[:, 0], ends[:, 1]], np.r_[ends[:, 1], ends[:, 0]])),
                       shape=(n, n))
 
-def outward_normals(mesh, tris):
+def orient_outward(mesh):
+    # one copy of every face, all triangles of a connected part oriented consistently, and every part
+    # turned so that its normals point outwards (its signed volume is positive)
     verts = np.asarray(mesh.vertices)
-    single = o3d.geometry.TriangleMesh(mesh.vertices, o3d.utility.Vector3iVector(tris))
+    tris = np.asarray(mesh.triangles)
+    _, first = np.unique(np.sort(tris, axis=1), axis=0, return_index=True)
+    single = o3d.geometry.TriangleMesh(mesh.vertices, o3d.utility.Vector3iVector(tris[np.sort(first)]))
     single.orient_triangles()
     labels = np.asarray(single.cluster_connected_triangles()[0])
     oriented = np.asarray(single.triangles).copy()
@@ -55,8 +68,7 @@ def outward_normals(mesh, tris):
     inside_out = volume[labels] < 0
     oriented[inside_out] = oriented[inside_out][:, [0, 2, 1]]
     single.triangles = o3d.utility.Vector3iVector(oriented)
-    single.compute_vertex_normals()
-    return np.asarray(single.vertex_normals)
+    return single
 
 def vertex_areas(verts, tris):
     face_area = np.linalg.norm(np.cross(verts[tris[:, 1]] - verts[tris[:, 0]],
@@ -74,54 +86,91 @@ def face_moments(verts, tris):
     return area, area[:, None] * total / 3, (area[:, None, None] * second / 12).reshape(-1, 9)
 
 def fine_mesh(mesh, radius):
-    mesh = split_long_edges(mesh, radius * curvature_edge)
-    tris = np.asarray(mesh.triangles)
-    _, first = np.unique(np.sort(tris, axis=1), axis=0, return_index=True)
-    return mesh, np.asarray(mesh.vertices), tris[np.sort(first)]
+    # orient first and split afterwards: splitting keeps the winding of every triangle, and orienting
+    # the coarse mesh is much faster than orienting the fine one
+    fine = split_long_edges(orient_outward(mesh), radius * curvature_edge)
+    fine.compute_vertex_normals()
+    return fine, np.asarray(fine.vertices), np.asarray(fine.triangles)
 
-def curvature_at(mesh, verts, tris, query, radius, chunk=500):
-    graph = surface_graph(verts, tris)
-    normals = outward_normals(mesh, tris)[query]
-    face_area, first_moment, second_moment = face_moments(verts, tris)
-    centroids = verts[tris].mean(axis=1)
+def reachable(graph, verts, query, rows, targets, limit, cell, chunk=500):
+    # for every pair (query[rows[i]], targets[i]): can the target vertex be reached from the query
+    # vertex along mesh edges with a path of at most limit? a path that short never leaves the ball
+    # of radius limit around its start, so for a group of nearby queries it is enough to search the
+    # part of the mesh inside their bounding box grown by limit, which gives exactly the same answer
+    _, group = np.unique(np.floor(verts[query] / cell).astype(np.int64), axis=0, return_inverse=True)
+    group = group.ravel()
+    by_cell = np.argsort(group, kind="stable")
+    starts = np.flatnonzero(np.r_[True, group[by_cell][1:] != group[by_cell][:-1]])
+    batches = [by_cell[i:min(i + chunk, end)]
+               for start, end in zip(starts, np.r_[starts[1:], len(query)])
+               for i in range(start, end, chunk)]
+    batch_of = np.empty(len(query), dtype=np.int64)
+    for i, part in enumerate(batches):
+        batch_of[part] = i
+    pair_batch = batch_of[rows]
+    order = np.argsort(pair_batch, kind="stable")
+    bounds = np.searchsorted(pair_batch[order], np.arange(len(batches) + 1))
 
-    close = cKDTree(verts[query]).sparse_distance_matrix(cKDTree(centroids), radius, output_type="coo_matrix")
-    keep = np.zeros(close.nnz, dtype=bool)
-    order = np.argsort(close.row, kind="stable")
-    rows_sorted, faces_sorted = close.row[order], close.col[order]
-    bounds = np.searchsorted(rows_sorted, np.arange(0, len(query) + chunk, chunk))
-    for c, start in enumerate(range(0, len(query), chunk)):
-        lo, hi = bounds[c], bounds[c + 1]
-        if lo == hi:
+    found = np.zeros(len(rows), dtype=bool)
+    row_of = np.full(len(query), -1)
+    local = np.full(len(verts), -1)
+    for i, part in enumerate(batches):
+        pairs = order[bounds[i]:bounds[i + 1]]
+        if len(pairs) == 0:
             continue
-        reach = np.isfinite(dijkstra(graph, indices=query[start:start + chunk], limit=2 * radius))
-        keep[order[lo:hi]] = reach[rows_sorted[lo:hi] - start, tris[faces_sorted[lo:hi], 0]]
-    near = csr_matrix((np.ones(keep.sum()), (close.row[keep], close.col[keep])), shape=(len(query), len(tris)))
+        points = verts[query[part]]
+        lo, hi = points.min(axis=0) - limit, points.max(axis=0) + limit
+        inside = np.flatnonzero(np.all((verts >= lo) & (verts <= hi), axis=1))
+        local[:] = -1
+        local[inside] = np.arange(len(inside))
+        dist = dijkstra(graph[inside][:, inside], indices=local[query[part]], limit=limit)
+        row_of[part] = np.arange(len(part))
+        target = local[targets[pairs]]
+        ok = target >= 0
+        found[pairs[ok]] = np.isfinite(dist[row_of[rows[pairs[ok]]], target[ok]])
+    return found
 
-    total = near @ face_area
-    usable = (np.diff(near.indptr) >= curvature_min_faces) & (total > 0)
-    total = np.where(usable, total, 1.0)
-    mean = near @ first_moment / total[:, None]
-    cov = (near @ second_moment / total[:, None]).reshape(-1, 3, 3) - mean[:, :, None] * mean[:, None, :]
-    eig = np.clip(np.linalg.eigvalsh(cov), 0, None)
-    spread = eig.sum(axis=1)
-    variation = np.divide(eig[:, 0], spread, out=np.zeros(len(query)), where=spread > 0)
-    side = -np.sign(np.einsum("ij,ij->i", mean - verts[query], normals))
-    magnitude = np.sqrt(24 * variation)
-    values = np.where(magnitude < curvature_flat, 0.0, side * magnitude)
-    return np.where(usable, values, np.nan)
+def curvature_at(mesh, verts, tris, query, radius, block=1000):
+    graph = surface_graph(verts, tris)
+    normals = np.asarray(mesh.vertex_normals)
+    face_area, first_moment, second_moment = face_moments(verts, tris)
+    faces = cKDTree(verts[tris].mean(axis=1))
+    values = np.full(len(query), np.nan)
+    # blocks of nearby queries keep the number of (query, face) pairs in memory bounded on dense meshes
+    spatial = np.lexsort(np.floor(verts[query] / (2 * radius)).T[::-1])
+    for start in range(0, len(query), block):
+        part = spatial[start:start + block]
+        points = query[part]
+        close = cKDTree(verts[points]).sparse_distance_matrix(faces, radius, output_type="coo_matrix")
+        keep = reachable(graph, verts, points, close.row, tris[close.col, 0], 2 * radius, 2 * radius)
+        near = csr_matrix((np.ones(keep.sum()), (close.row[keep], close.col[keep])), shape=(len(points), len(tris)))
+        del close, keep
+
+        total = near @ face_area
+        usable = (np.diff(near.indptr) >= curvature_min_faces) & (total > 0)
+        total = np.where(usable, total, 1.0)
+        mean = near @ first_moment / total[:, None]
+        cov = (near @ second_moment / total[:, None]).reshape(-1, 3, 3) - mean[:, :, None] * mean[:, None, :]
+        eig = np.clip(np.linalg.eigvalsh(cov), 0, None)
+        spread = eig.sum(axis=1)
+        variation = np.divide(eig[:, 0], spread, out=np.zeros(len(points)), where=spread > 0)
+        side = -np.sign(np.einsum("ij,ij->i", mean - verts[points], normals[points]))
+        magnitude = np.sqrt(24 * variation)
+        part_values = np.where(magnitude < curvature_flat, 0.0, side * magnitude)
+        values[part] = np.where(usable, part_values, np.nan)
+    return values
 
 def curvature_values(mesh, radius=curvature_radius, samples=curvature_samples):
     mesh, verts, tris = fine_mesh(mesh, radius)
     if len(tris) == 0:
         return np.array([]), np.array([]), 1.0
+    # vertices drawn with a probability proportional to their area, so every histogram rests on the
+    # same number of area-uniform samples (weighting all vertices by their area instead gives an
+    # effective sample size of only a few thousand on meshes with uneven triangles)
     area = vertex_areas(verts, tris)
-    if len(verts) <= samples:
-        query, weights = np.flatnonzero(area > 0), area[area > 0]
-    else:
-        drawn = np.random.default_rng(seed).choice(len(verts), size=samples, p=area / area.sum())
-        query, counts = np.unique(drawn, return_counts=True)
-        weights = counts.astype(float)
+    drawn = np.random.default_rng(seed).choice(len(verts), size=samples, p=area / area.sum())
+    query, counts = np.unique(drawn, return_counts=True)
+    weights = counts.astype(float)
     values = curvature_at(mesh, verts, tris, query, radius)
     usable = np.isfinite(values)
     return values[usable], weights[usable], 1 - weights[usable].sum() / weights.sum()
@@ -137,8 +186,15 @@ def closed_mesh_volume(mesh):
     return abs(np.einsum("ij,ij->i", a, np.cross(b, c)).sum() / 6)
 
 def ray_directions(rays=volume_rays):
-    d = np.random.default_rng(seed).normal(size=(rays, 3))
-    return d / np.linalg.norm(d, axis=1, keepdims=True)
+    # golden spiral: the directions are spread as evenly as possible over the sphere, so one hole
+    # is unlikely to fool several rays at once; the fixed random rotation makes sure that no ray is
+    # parallel to a coordinate axis, along which the faces of aligned shapes and the voxel grid lie
+    i = np.arange(rays) + 0.5
+    z = 1 - 2 * i / rays
+    phi = i * np.pi * (3 - np.sqrt(5))
+    d = np.stack([np.sqrt(1 - z ** 2) * np.cos(phi), np.sqrt(1 - z ** 2) * np.sin(phi), z], axis=1)
+    rotation, _ = np.linalg.qr(np.random.default_rng(seed).normal(size=(3, 3)))
+    return d @ rotation.T
 
 def voxel_votes(mesh, res=volume_res, rays=volume_rays):
     scene = o3d.t.geometry.RaycastingScene()
@@ -196,10 +252,19 @@ def global_features(mesh):
         "hull_fallback": bool(hull_fallback),
     }
 
+def surface_points(verts, tris, n, rng):
+    # n points spread uniformly over the surface: a face is picked with a probability proportional
+    # to its area, then a uniformly random point inside it
+    a, b, c = verts[tris[:, 0]], verts[tris[:, 1]], verts[tris[:, 2]]
+    area = np.linalg.norm(np.cross(b - a, c - a), axis=1)
+    face = rng.choice(len(tris), size=n, p=area / area.sum())
+    s, t = np.sqrt(rng.random(n)), rng.random(n)
+    return (1 - s)[:, None] * a[face] + (s * (1 - t))[:, None] * b[face] + (s * t)[:, None] * c[face]
+
 def shape_property_values(mesh, rng):
     verts = np.asarray(mesh.vertices)
-    n = verts.shape[0]
-    pick = lambda k: verts[rng.integers(0, n, size=(samples, k))]
+    tris = np.asarray(mesh.triangles)
+    pick = lambda k: surface_points(verts, tris, samples * k, rng).reshape(samples, k, 3)
 
     a3 = pick(3)
     u = a3[:, 1] - a3[:, 0]
@@ -209,7 +274,7 @@ def shape_property_values(mesh, rng):
                         out=np.zeros(samples), where=lengths > 0)
     angles = np.arccos(np.clip(cosines, -1, 1))
 
-    d1 = np.linalg.norm(verts - verts.mean(axis=0), axis=1)
+    d1 = np.linalg.norm(pick(1)[:, 0] - area_barycenter(mesh), axis=1)
 
     d2_pts = pick(2)
     d2 = np.linalg.norm(d2_pts[:, 1] - d2_pts[:, 0], axis=1)
@@ -229,7 +294,7 @@ def histogram_features(values, weights={}):
     for name, data in values.items():
         lo, hi = ranges[name]
         w = weights.get(name, np.ones(len(data)))
-        counts, _ = np.histogram(np.clip(data, lo, hi), bins=bins, range=ranges[name], weights=w)
+        counts, _ = np.histogram(np.clip(data, lo, hi), bins=n_bins(name), range=ranges[name], weights=w)
         for i, count in enumerate(counts):
             row[f"{name}_{i}"] = count / w.sum()
     return row

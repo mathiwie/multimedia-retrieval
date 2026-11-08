@@ -73,7 +73,7 @@ def print_normalised(key, kind="log"):
     print(f"{key} ({kind} normalisation{', held out of the database' if held_out else ''})")
     print(match.iloc[0][globals_used].astype(float).round(4).to_string())
     for name in ft.ranges:
-        values = match.iloc[0][[f"{name}_{i}" for i in range(ft.bins)]].astype(float)
+        values = match.iloc[0][[f"{name}_{i}" for i in range(ft.n_bins(name))]].astype(float)
         print(f"{name:3s} " + " ".join(f"{v:.3f}" for v in values))
 
 

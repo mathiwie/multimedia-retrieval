@@ -4,9 +4,10 @@ import pandas as pd
 
 import distance as ds
 import features as ft
+import query as qr
 from preprocessing import out_dir
 
-best = {"normalisation": "log", "histogram metric": "euclidean", "globals weight": 6.0}
+best = {"normalisation": "log", "histogram metric": "euclidean", "globals weight": qr.globals_weight}
 k = 10
 duplicate_distance = 0.02
 shown = ["Bicycle", "ComputerKeyboard", "HumanHead", "Apartment", "FloorLamp", "Vase", "Drum",

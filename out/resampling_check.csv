@@ -2,9 +2,8 @@ key,class,num_verts,num_faces,num_verts_after,num_faces_after,kind
 Door/D01121,Door,16,16,7584,14904,refined
 Door/m1708,Door,16,16,7584,14904,refined
 Door/D01194,Door,18,18,7579,14722,refined
-Skyscraper/D00058,Skyscraper,73440,53448,8182,6684,simplified
-Biplane/m1120,Biplane,65722,129881,8153,15000,simplified
-PlantIndoors/D00080,PlantIndoors,64126,34887,7555,5454,simplified
-House/D00286,House,28394,62973,8032,18502,vertex clustering
-House/D00574,House,15615,68220,9593,38386,vertex clustering
-House/D00901,House,17182,40698,7307,16682,vertex clustering
+Skyscraper/D00058,Skyscraper,73440,53448,8186,6684,simplified
+Biplane/m1120,Biplane,65722,129881,8157,14998,simplified
+PlantIndoors/D00080,PlantIndoors,64126,34887,7540,5441,simplified
+House/D00286,House,28394,62973,8032,17702,vertex clustering
+House/D00901,House,17182,40698,7307,16376,vertex clustering

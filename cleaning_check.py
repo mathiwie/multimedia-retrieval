@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import open3d as o3d
 
-from preprocessing import db_path, out_dir, walk_shapes, save_stats
+from preprocessing import db_path, out_dir, walk_shapes, save_stats, remove_reversed_triangles
 
 check_csv = os.path.join(out_dir, "cleaning_check.csv")
 
@@ -26,6 +26,7 @@ def clean_steps(path, cls):
              ("merged", lambda m: m.merge_close_vertices(np.max(m.get_max_bound() - m.get_min_bound()) * 1e-6)),
              ("duplicate vertices", lambda m: m.remove_duplicated_vertices()),
              ("duplicate triangles", lambda m: m.remove_duplicated_triangles()),
+             ("reversed triangles", remove_reversed_triangles),
              ("degenerate triangles", lambda m: m.remove_degenerate_triangles()),
              ("unreferenced vertices", lambda m: m.remove_unreferenced_vertices())]
     for name, step in steps:
@@ -40,7 +41,8 @@ def clean_steps(path, cls):
 def main():
     data = pd.DataFrame([clean_steps(path, cls) for path, cls in walk_shapes(db_path)])
     save_stats(data, check_csv)
-    names = ["loaded", "merged", "duplicate vertices", "duplicate triangles", "degenerate triangles", "unreferenced vertices"]
+    names = ["loaded", "merged", "duplicate vertices", "duplicate triangles", "reversed triangles",
+             "degenerate triangles", "unreferenced vertices"]
     print(f"{len(data)} shapes, totals over the database after each cleaning step")
     print(f"{'step':24s} {'vertices':>10s} {'faces':>10s} {'faces with a repeated corner':>29s} {'zero-area faces':>16s}")
     for name in names:
@@ -51,6 +53,10 @@ def main():
     print(f"\nshapes where vertices were merged: {(merged > 0).sum()}, shapes that lost faces: {(removed > 0).sum()}")
     print(f"most vertices merged in one shape: {merged.max():,} ({data.loc[merged.idxmax(), 'path']})")
     print(f"most faces removed from one shape: {removed.max():,} ({data.loc[removed.idxmax(), 'path']})")
+    orphans = data["degenerate triangles: vertices"] - data["unreferenced vertices: vertices"]
+    print(f"vertices left without a face by the earlier steps (removed last): {orphans.sum():,} in {(orphans > 0).sum()} shapes")
+    reversed_ = data["duplicate triangles: faces"] - data["reversed triangles: faces"]
+    print(f"triangles stored a second time with the opposite winding: {reversed_.sum():,} in {(reversed_ > 0).sum()} shapes")
     left = data["unreferenced vertices: zero area"]
     print(f"zero-area faces left after cleaning (three different but collinear corners): {left.sum():,} in {(left > 0).sum()} shapes")
 

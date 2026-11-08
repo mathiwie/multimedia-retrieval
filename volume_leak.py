@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 
 import distance as ds
 import features as ft
+import query as qr
 from compare_distances import feature_scores
 from preprocessing import out_dir, normalised_dir, walk_shapes, save_stats
 
@@ -14,7 +15,7 @@ scan_csv = os.path.join(out_dir, "volume_leak.csv")
 choice_csv = os.path.join(out_dir, "volume_leak_choice.csv")
 limits = {"disagreement": [0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
           "volume spread": [0.1, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0]}
-weights = {name: (6.0 if name == "globals" else 1.0) for name in ds.blocks}
+weights = {name: (qr.globals_weight if name == "globals" else 1.0) for name in ds.blocks}
 
 
 def occupancy_volume(mesh, res=ft.volume_res):

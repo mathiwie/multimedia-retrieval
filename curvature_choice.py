@@ -86,8 +86,22 @@ def validate(radius):
             "torus_correlation": np.corrcoef(estimate[ok], truth[ok])[0, 1]}
 
 
+def cube_band(radius, samples=4000):
+    # every point closer than the radius to an edge of a cube sees part of the next face, so the
+    # estimate spreads the curvature of the edges over a band; for a unit cube that band covers a
+    # share 1 - (1 - 2 r)^2 of the surface
+    cube = o3d.geometry.TriangleMesh.create_box().subdivide_midpoint(4)
+    cube.translate(-cube.get_center())
+    fine, verts, tris = ft.fine_mesh(cube, radius)
+    area = ft.vertex_areas(verts, tris)
+    query = np.unique(np.random.default_rng(ft.seed).choice(len(verts), size=samples, p=area / area.sum()))
+    values = ft.curvature_at(fine, verts, tris, query, radius)
+    values = values[np.isfinite(values)]
+    return {"radius": radius, "band share": np.mean(np.abs(values) > 0.02), "expected": 1 - (1 - 2 * radius) ** 2}
+
+
 def histogram(values, weights, lo, hi):
-    counts, _ = np.histogram(np.clip(values, lo, hi), bins=ft.bins, range=(lo, hi), weights=weights)
+    counts, _ = np.histogram(np.clip(values, lo, hi), bins=ft.n_bins("CURV"), range=(lo, hi), weights=weights)
     return counts / weights.sum()
 
 
@@ -110,10 +124,15 @@ def robustness(meshes, estimator, lo, hi):
 def main():
     print("validation on shapes with known curvature (values are r * kappa)")
     print(f"{'r':>5s}  {'sphere':>15s}  {'cylinder side':>15s}  {'torus error':>11s}  {'torus corr':>10s}")
-    for radius in (0.05, ft.curvature_radius):
+    for radius in sorted({0.05, 0.08, ft.curvature_radius}):
         v = validate(radius)
         print(f"{radius:>5.2f}  {v['sphere']:.4f} ({v['sphere_expected']:.4f})  "
               f"{v['cylinder']:.4f} ({v['cylinder_expected']:.4f})  {v['torus_error']:>11.4f}  {v['torus_correlation']:>10.4f}")
+
+    print("\nshare of a cube's surface with a curvature above 0.02 (the band around the edges)")
+    for radius in radii:
+        b = cube_band(radius)
+        print(f"  r = {radius:.2f}: {b['band share']:.3f} (expected {b['expected']:.3f})")
 
     random.seed(0)
     paths = random.sample([p for p, _ in walk_shapes(normalised_dir)], shapes_used)
@@ -125,6 +144,14 @@ def main():
     for radius in radii:
         estimator = lambda m, radius=radius: ft.curvature_values(m, radius=radius)[:2]
         rows.append({"estimator": f"covariance r = {radius}", **robustness(meshes, estimator, *ft.ranges["CURV"])})
+
+    def finer(m, radius=ft.curvature_radius, edge=0.5):
+        used, ft.curvature_edge = ft.curvature_edge, edge
+        try:
+            return ft.curvature_values(m, radius=radius)[:2]
+        finally:
+            ft.curvature_edge = used
+    rows.append({"estimator": f"r = {ft.curvature_radius}, edges <= r/2", **robustness(meshes, finer, *ft.ranges["CURV"])})
     table = pd.DataFrame(rows)
     save_stats(table, choice_csv)
     print(f"\nsame shape at another resolution vs different shapes ({shapes_used} shapes, L1 between histograms)")

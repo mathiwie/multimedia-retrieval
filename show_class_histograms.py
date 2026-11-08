@@ -14,7 +14,7 @@ titles = {"A3": "A3 (angle)", "D1": "D1 (barycenter-vertex)", "D2": "D2 (vertex-
 
 
 def histograms(data, name):
-    return data[[f"{name}_{i}" for i in range(ft.bins)]].to_numpy(dtype=float)
+    return data[[f"{name}_{i}" for i in range(ft.n_bins(name))]].to_numpy(dtype=float)
 
 
 def spread(data, sample=600, seed=0):
@@ -47,8 +47,7 @@ def main(classes):
     for r, cls in enumerate(classes):
         part = data[data["class"] == cls]
         for c, name in enumerate(names):
-            lo, hi = ft.ranges[name]
-            x = lo + (np.arange(ft.bins) + 0.5) * (hi - lo) / ft.bins
+            x = ft.bin_centres(name)
             h = histograms(part, name)
             a = ax[r, c]
             a.plot(x, h.T, color=colors[c], alpha=0.25, linewidth=0.7)
