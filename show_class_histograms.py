@@ -9,7 +9,7 @@ from preprocessing import out_dir, save_stats
 
 default_classes = ["HumanHead", "Bicycle", "Sword", "Car", "Vase", "PlantWildNonTree"]
 spread_csv = os.path.join(out_dir, "class_histogram_spread.csv")
-titles = {"A3": "A3 (angle)", "D1": "D1 (barycenter-vertex)", "D2": "D2 (vertex-vertex)",
+titles = {"A3": "A3 (angle)", "D1": "D1 (barycenter to point)", "D2": "D2 (point to point)",
           "D3": "D3 (sqrt triangle area)", "D4": "D4 (cbrt tetrahedron volume)", "CURV": "curvature"}
 
 

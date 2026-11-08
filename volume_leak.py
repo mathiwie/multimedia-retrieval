@@ -109,7 +109,7 @@ def main(redo=False):
         return {"volume": volume, "leak measure": measure, "limit": limit,
                 "hull fallbacks": int(variant["hull_fallback"].sum()), **scores(variant)}
 
-    rows = [row("single-ray occupancy (old)", "", np.nan,
+    rows = [row("single ray occupancy (old)", "", np.nan,
                 with_volume(features, data, data["occupancy_volume"].to_numpy(), 1.0)),
             row("tetrahedra", "", np.nan, with_volume(features, data, tetra.to_numpy(), 1.0)),
             row("convex hull only", "", np.nan, with_volume(features, data, np.full(len(data), np.inf), 1.0)),
@@ -138,7 +138,7 @@ def main(redo=False):
     for measure, marker in (("disagreement", "o"), ("volume spread", "s")):
         part = pd.concat([voxel_rows[voxel_rows["leak measure"] == measure], voxel_rows[voxel_rows["leak measure"] == "none"]])
         ax[1].plot(part["hull fallbacks"], part["precision@10"], marker=marker, label=f"leak limit on {measure}")
-    for name, style in (("single-ray occupancy (old)", ":"), ("tetrahedra", "--"), ("convex hull only", "-.")):
+    for name, style in (("single ray occupancy (old)", ":"), ("tetrahedra", "--"), ("convex hull only", "-.")):
         ax[1].axhline(table.loc[table["volume"] == name, "precision@10"].iloc[0], color="gray", linestyle=style,
                       label=f"{name} (all queries)")
     ax[1].set_xscale("log")

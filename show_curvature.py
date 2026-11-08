@@ -66,7 +66,7 @@ def main(keys):
         ax[r, 0].text(-0.08, 0.5, label, transform=ax[r, 0].transAxes, rotation=90, ha="right", va="center")
     bar = fig.colorbar(ScalarMappable(Normalize(-limit, limit), colormap), ax=ax, orientation="horizontal",
                        fraction=0.025, pad=0.02, aspect=60)
-    bar.set_label(f"curvature r * kappa (r = {ft.curvature_radius}); blue = concave, white = flat, red = convex")
+    bar.set_label(f"curvature r * kappa (r = {ft.curvature_radius}), blue = concave, white = flat, red = convex")
     fname = os.path.join(out_dir, "curvature_examples.png")
     plt.savefig(fname, dpi=200, bbox_inches="tight")
     plt.close(fig)

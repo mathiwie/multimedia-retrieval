@@ -41,12 +41,12 @@ def plot(classes, shapes):
     fig, ax = plt.subplots(figsize=(9, 15))
     order = classes.iloc[::-1]
     y = np.arange(len(order))
-    ax.barh(y, order["r_precision"], color="steelblue", label="R-precision (K = class size - 1)")
+    ax.barh(y, order["r_precision"], color="steelblue", label=r"R precision ($K = n_c - 1$)")
     ax.scatter(order[metrics[0]], y, color="darkorange", s=14, zorder=3, label=f"precision@{k}")
     ax.scatter(order["random"], y, color="black", marker="|", s=60, zorder=3, label="random retrieval")
     for m, style in zip(metrics, ("-", "--")):
         ax.axvline(shapes[m].mean(), color="gray", linestyle=style, linewidth=1,
-                   label=f"grand mean {m} = {shapes[m].mean():.3f}")
+                   label=f"grand mean {m.replace('r_precision', 'R precision')} = {shapes[m].mean():.3f}")
     ax.set_yticks(y)
     ax.set_yticklabels([f"{c} ({s})" for c, s in zip(order.index, order["size"])], fontsize=7)
     ax.set_xlim(0, 1)
