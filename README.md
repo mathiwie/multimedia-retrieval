@@ -5,7 +5,7 @@ Given a 3D mesh, it finds and shows the most similar shapes in a database of 2,4
 
 ## Setup
 
-Requires Python 3.10 or newer (tested with Python 3.12.3).
+Requires Python 3.11 or 3.12 (tested with Python 3.12.3).
 
 ```
 python -m venv .venv
@@ -14,7 +14,8 @@ source .venv/bin/activate       # macOS / Linux
 pip install -r requirements.txt
 ```
 
-Tested with open3d 0.20.0, numpy 2.0.2, pandas 2.2.3, scipy 1.16.1, matplotlib 3.11.2 and scikit-learn 1.7.2.
+`requirements.txt` pins the versions that produced the report: open3d 0.20.0, numpy 2.0.2, pandas 2.2.3, scipy 1.16.1, matplotlib 3.11.2 and scikit-learn 1.7.2.
+open3d 0.20.0 is available for Windows, Apple-silicon macOS and Linux with glibc 2.35 or newer (not for Intel Macs).
 Run every script from the repository root.
 
 ## What is included
@@ -39,6 +40,17 @@ python knn.py Gun/D00204 -r 0.4               # range search: all shapes within 
 
 Shapes are named `Class/file` without the extension. Results are printed, saved as a snapshot in `out/query_examples/` and shown in an interactive viewer (add `-nogui` to skip the viewer).
 Ten shapes are held out of the database to act as unseen queries; they are listed in `out/holdout.csv`.
+
+## Demo
+
+```
+python demo.py                                # menu: a number runs that preset, Enter runs the next one, q quits
+python demo.py 4                              # run one preset directly
+python demo.py list                           # list the presets
+```
+
+The presets walk through the steps with fixed inputs: the viewer, normalisation, the features of one shape, a good, a poor and a new-file query, the kd-tree with K and with R, the t-SNE map and the evaluation results.
+The snapshots that the query tools and the t-SNE plot save in `out/` are put back afterwards, so a demo never changes the delivered results.
 
 ## Running the steps
 
