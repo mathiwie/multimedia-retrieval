@@ -44,12 +44,14 @@ Ten shapes are held out of the database to act as unseen queries; they are liste
 ## Demo
 
 ```
-python demo.py                                # menu: a number runs that preset, Enter runs the next one, q quits
-python demo.py 4                              # run one preset directly
-python demo.py list                           # list the presets
+python demo.py                                # opens the demo window
+python demo.py 4                              # runs preset 4 in the terminal, without the window
+python demo.py list                           # lists the presets
 ```
 
-The presets walk through the steps with fixed inputs: the viewer, normalisation, the features of one shape, a good, a poor and a new-file query, the kd-tree with K and with R, the t-SNE map and the evaluation results.
+The demo window has one button per step, with fixed inputs: the viewer, normalisation, the features of one shape, a good, a poor and a new-file query, the kd-tree with K and with R, the t-SNE map and the evaluation results.
+Its Query panel runs any query: a database shape picked by class and name, or a mesh file chosen in a file dialog (`demo_meshes/table.obj` is a table built from boxes that is not in the database), with brute force or the kd-tree, and K results or all results within a distance.
+What the tools print is shown in the window; viewer windows open separately.
 The snapshots that the query tools and the t-SNE plot save in `out/` are put back afterwards, so a demo never changes the delivered results.
 
 ## Running the steps
