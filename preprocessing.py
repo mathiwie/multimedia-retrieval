@@ -1,5 +1,6 @@
 import os
 import glob
+from collections import Counter
 import numpy as np
 import pandas as pd
 import open3d as o3d
@@ -20,28 +21,46 @@ target_verts = 7500
 target_min = 5000
 target_max = 10000
 
-def get_face_type(path):
-    counts = set()
+def read_obj(path):
+    # the mesh exactly as stored in an OBJ file: every vertex line is a vertex and every face line a face
+    # (polygons are split into a fan of triangles). open3d's reader is different: it merges vertices
+    # with the same position (and normal) and drops vertices that no face uses, which removes about
+    # 1.45 million of the 13.9 million vertices of the database, so we count vertices here instead
+    verts, tris, sizes = [], [], Counter()
     with open(path, "r", errors="ignore") as f:
         for line in f:
-            if line.startswith("f "):
-                counts.add(len(line.split()) - 1)
-    if not counts:
+            parts = line.split()
+            if not parts:
+                continue
+            if parts[0] == "v":
+                verts.append(parts[1:4])
+            elif parts[0] == "f":
+                index = [int(p.split("/")[0]) for p in parts[1:]]
+                index = [i - 1 if i > 0 else len(verts) + i for i in index]
+                sizes[len(index)] += 1
+                tris.extend([index[0], index[k], index[k + 1]] for k in range(1, len(index) - 1))
+    return (np.array(verts, dtype=float).reshape(-1, 3), np.array(tris, dtype=np.int64).reshape(-1, 3), sizes)
+
+def face_type_of(sizes):
+    if not sizes:
         return "none"
-    if counts == {3}:
+    if set(sizes) == {3}:
         return "triangles"
-    if counts == {4}:
+    if set(sizes) == {4}:
         return "quads"
     return "mixed"
 
+def file_counts(path):
+    # number of vertices and faces stored in the file
+    verts, _, sizes = read_obj(path)
+    return len(verts), sum(sizes.values())
+
 def analyze_shape(path, shape_class):
+    verts, _, sizes = read_obj(path)
     mesh = o3d.io.read_triangle_mesh(path)
-    verts = np.asarray(mesh.vertices)
-    tris = np.asarray(mesh.triangles)
-    num_verts = verts.shape[0]
-    num_faces = tris.shape[0]
-    face_type = get_face_type(path)
-    if num_verts > 0:
+    loaded = np.asarray(mesh.vertices)
+    # the bounding box is that of the surface, so vertices that no face uses do not count
+    if loaded.shape[0] > 0:
         bbox = mesh.get_axis_aligned_bounding_box()
         bbox_min = bbox.get_min_bound()
         bbox_max = bbox.get_max_bound()
@@ -49,11 +68,13 @@ def analyze_shape(path, shape_class):
         bbox_min = np.array([np.nan] * 3)
         bbox_max = np.array([np.nan] * 3)
     return {
-        "path": path,
+        "path": path.replace("\\", "/"),
         "class": shape_class,
-        "num_verts": num_verts,
-        "num_faces": num_faces,
-        "face_type": face_type,
+        "num_verts": len(verts),
+        "num_faces": sum(sizes.values()),
+        "face_type": face_type_of(sizes),
+        "loaded_verts": loaded.shape[0],
+        "loaded_faces": np.asarray(mesh.triangles).shape[0],
         "min_x": bbox_min[0], "min_y": bbox_min[1], "min_z": bbox_min[2],
         "max_x": bbox_max[0], "max_y": bbox_max[1], "max_z": bbox_max[2],
     }
@@ -115,7 +136,7 @@ def make_class_histogram(df, label=""):
     print("saved class histogram to", fname)
 
 def print_stats_summary(df):
-    print("\nsummary ")
+    print("\nsummary (vertices and faces as stored in the files)")
     print("num shapes:", len(df))
     print("avg verts:", round(df["num_verts"].mean(), 1))
     print("avg faces:", round(df["num_faces"].mean(), 1))
@@ -123,6 +144,8 @@ def print_stats_summary(df):
           "-", df["num_verts"].min(), "verts")
     print("biggest:", df.loc[df["num_verts"].idxmax(), "path"],
           "-", df["num_verts"].max(), "verts")
+    merged = df["num_verts"] - df["loaded_verts"]
+    print(f"open3d merges or drops {merged.sum():,} vertices on loading, in {(merged > 0).sum()} shapes")
     print("----------------\n")
 
 def find_average_and_outliers(df, n=3, lo=small_thresh, hi=big_thresh):
@@ -273,10 +296,11 @@ def fix_outliers(df, root, dest, lo=target_min, hi=target_max):
         path = row["path"]
         cls = row["class"]
         try:
-            if row["num_verts"] == 0:
+            # the decisions below use the mesh as loaded and cleaned, not the counts in the file
+            mesh = clean_mesh(o3d.io.read_triangle_mesh(path))
+            if num_verts(mesh) == 0:
                 print(f"skipping {path} (empty mesh, 0 verts)")
                 continue
-            mesh = clean_mesh(o3d.io.read_triangle_mesh(path))
             nv = num_verts(mesh)
             nf = np.asarray(mesh.triangles).shape[0]
             if nv < lo:
@@ -460,7 +484,9 @@ if __name__ == "__main__":
     import sys
     os.makedirs(out_dir, exist_ok=True)
     mode = sys.argv[1] if len(sys.argv) > 1 else "all"
-    if mode == "all":
+    if mode not in ("all", "stats", "normalise", "check"):
+        sys.exit("usage: python preprocessing.py [all | stats | normalise | check]")
+    if mode in ("all", "stats"):
         print("analyzing shapes...")
         stats = make_stats_df(db_path)
         save_stats(stats, stats_csv)
@@ -469,8 +495,9 @@ if __name__ == "__main__":
         make_class_histogram(stats, label="before")
         picked = find_average_and_outliers(stats)
         save_stats(picked, average_outliers_csv)
-        print("fixing outliers...")
-        fix_outliers(stats, db_path, resampled_dir)
+        if mode == "all":
+            print("fixing outliers...")
+            fix_outliers(stats, db_path, resampled_dir)
         print("rechecking stats...")
         stats2 = make_stats_df(resampled_dir)
         save_stats(stats2, stats_csv_after)
@@ -479,6 +506,7 @@ if __name__ == "__main__":
     if mode in ("all", "normalise"):
         print("normalising...")
         normalise_all(resampled_dir, normalised_dir)
-    before = check_normalisation(resampled_dir, normalisation_before_csv)
-    after = check_normalisation(normalised_dir)
-    make_normalisation_histograms(before, after)
+    if mode != "stats":
+        before = check_normalisation(resampled_dir, normalisation_before_csv)
+        after = check_normalisation(normalised_dir)
+        make_normalisation_histograms(before, after)

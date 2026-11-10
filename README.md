@@ -61,6 +61,7 @@ The snapshots that the query tools and the t-SNE plot save in `out/` are put bac
 | 1 viewer | `python main.py [mesh.obj]` | interactive viewer (mouse: rotate, zoom, pan; `W` toggles the wireframe) |
 | | `python show_viewer_modes.py [Class/shape] [Class/shape]` | `out/viewer_modes.png` (display modes), `out/viewer_manipulation.png` (rotate, zoom, pan), `out/viewer_variety.png` (smallest, largest and out-of-scale shapes) |
 | 2 statistics, resampling, normalisation | `python preprocessing.py` | `out/shape_stats*.csv`, `out/resampled/`, `out/normalised/`, histograms |
+| | `python preprocessing.py stats` | only redo the statistics of the original and the resampled meshes (`out/shape_stats*.csv`, `out/average_and_outliers.csv`, `out/histograms_{before,after}.png`). Vertices and faces are counted as stored in the files (`num_verts`, `num_faces`); `loaded_verts` is what Open3D keeps when it loads a file, since it merges vertices with the same position and drops unused ones |
 | | `python preprocessing.py normalise` | only redo the normalisation and its check |
 | | `python preprocessing.py check` | only redo the normalisation check: statistics before and after, `out/normalisation_check*.csv`, `out/histograms_normalised.png` |
 | 2 cleaning | `python cleaning_check.py` | vertices merged and faces removed by each cleaning step (including triangles stored a second time with the opposite winding, which `remove_duplicated_triangles` keeps), `out/cleaning_check.csv` |

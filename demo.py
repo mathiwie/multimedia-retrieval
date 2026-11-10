@@ -82,7 +82,7 @@ def show_evaluation(out=print):
 presets = [
     ("1", "Step 1", "Viewer: Car/D00236 as stored",
      ["main.py", os.path.join("ShapeDatabase_INFOMR", "Car", "D00236.obj")],
-     [view_keys, "the shape as stored: 26,704 vertices and 45,234 faces (Figure 2)"]),
+     [view_keys, "the shape as stored: 26,709 vertices and 45,234 faces (Figure 2)"]),
     ("2", "Step 2-3", "Normalisation: Car/D00236 before and after",
      ["show_normalised.py", "Car/D00236"],
      ["left: the resampled mesh; right: barycenter at the origin, major axis on x, flipped, scaled into the unit cube",
