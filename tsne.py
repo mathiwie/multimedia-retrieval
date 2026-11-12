@@ -21,8 +21,13 @@ def embed_2d(seed=0):
     engine = Engine()
     matrix = ds.distances_to(engine.table, engine.table, engine.scales, engine.weights)
     print(f"running tsne on {len(matrix)} shapes...")
+    # sklearn reads a precomputed matrix as squared distances (it squares them itself for euclidean);
+    # plain distances give heavy tailed affinities and a more spread out map
     xy = TSNE(n_components=2, perplexity=perplexity, metric="precomputed", init="random",
-              random_state=seed).fit_transform(matrix)
+              random_state=seed).fit_transform(matrix ** 2)
+    # the orientation of a tsne map means nothing, so turn its long side horizontal to fill the figure
+    xy -= xy.mean(axis=0)
+    xy = xy @ np.linalg.svd(xy, full_matrices=False)[2].T
     points = engine.database[["path", "class"]].assign(x=xy[:, 0], y=xy[:, 1])
     save_stats(points, tsne_csv)
     return points
@@ -30,7 +35,7 @@ def embed_2d(seed=0):
 
 def plot(points, gui=True, brush=None):
     classes = sorted(points["class"].unique())
-    fig, ax = plt.subplots(figsize=(17, 10))
+    fig, ax = plt.subplots(figsize=(17, 8.5))
     # 69 classes are too many for colours alone, so every class gets its own colour and marker pair
     styles = [(colour, marker) for marker in markers for colour in plt.get_cmap("tab10").colors]
     for cls, (colour, marker) in zip(classes, styles):
@@ -47,9 +52,11 @@ def plot(points, gui=True, brush=None):
     ax.set_title(f"tsne of {len(points)} shapes, {len(classes)} classes")
     ax.set_xticks([])
     ax.set_yticks([])
+    # tsne distances mean the same in x and y, a free aspect would stretch the map sideways
+    ax.set_aspect("equal")
     plt.tight_layout()
     fname = os.path.join(out_dir, "tsne.png")
-    plt.savefig(fname, dpi=150)
+    plt.savefig(fname, dpi=150, bbox_inches="tight")
     print("saved", fname)
 
     note = ax.annotate("", xy=(0, 0), xytext=(12, 12), textcoords="offset points", fontsize=9,
@@ -61,7 +68,11 @@ def plot(points, gui=True, brush=None):
         if event.inaxes != ax:
             return None
         hit, info = dots.contains(event)
-        return info["ind"][0] if hit else None
+        if not hit:
+            return None
+        # points can overlap, take the one closest to the cursor
+        pixels = ax.transData.transform(points[["x", "y"]].to_numpy()[info["ind"]])
+        return info["ind"][np.argmin(np.hypot(pixels[:, 0] - event.x, pixels[:, 1] - event.y))]
 
     def hover(event):
         i = picked(event)
@@ -92,10 +103,11 @@ def plot(points, gui=True, brush=None):
     fig.canvas.mpl_connect("button_press_event", click)
     if brush is not None:
         row = points[points["path"].map(qr.key) == brush].iloc[0]
+        fig.canvas.draw()  # the equal aspect is only applied on a draw, the pixel position needs it
         x, y = ax.transData.transform((row["x"], row["y"]))
         fig.canvas.callbacks.process("motion_notify_event", MouseEvent("motion_notify_event", fig.canvas, x, y))
         fname = os.path.join(out_dir, "tsne_brush.png")
-        plt.savefig(fname, dpi=150)
+        plt.savefig(fname, dpi=150, bbox_inches="tight")
         print("saved", fname)
     if gui:
         plt.show()
