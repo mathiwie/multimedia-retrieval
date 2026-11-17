@@ -39,13 +39,17 @@ def fit_scales(database, histogram_metric="euclidean", sample=400, seed=0):
     return scales
 
 
-def distances_to(query, database, scales, weights=None, histogram_metric="euclidean"):
+def distances_to(query, database, scales, weights=None, histogram_metric="euclidean", combine="sum"):
+    # combine = "sum": weighted mean of the block distances (equation 23 of the report)
+    # combine = "l2": weighted root mean square of the block distances, a plain euclidean distance
+    # after scaling every block, which the kd-tree can compute exactly (step 5)
     weights = weights or {name: 1.0 for name in blocks}
     total = np.zeros((len(query), len(database)))
     for name in blocks:
         if not weights.get(name):
             continue
         part = block_distances(block_matrix(query, name), block_matrix(database, name),
-                               name, histogram_metric)
-        total += weights[name] * part / scales[name]
-    return total / sum(weights.get(name, 0) for name in blocks)
+                               name, histogram_metric) / scales[name]
+        total += weights[name] * (part ** 2 if combine == "l2" else part)
+    total /= sum(weights.get(name, 0) for name in blocks)
+    return np.sqrt(total) if combine == "l2" else total

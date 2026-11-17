@@ -34,8 +34,9 @@ python query.py Gun/D00204                    # 5 best matches of a database sha
 python query.py Gun/D00204 -k 10              # 10 best matches
 python query.py Gun/D00204 -t 0.35            # all shapes closer than distance 0.35
 python query.py path/to/mesh.obj              # a mesh that is not in the database
-python knn.py Gun/D00204 -k 5                 # same, using the kd-tree (step 5)
-python knn.py Gun/D00204 -r 0.4               # range search: all shapes within distance 0.4
+python knn.py Gun/D00204 -k 5                 # the kd-tree (step 5), which combines the blocks as an l2 distance
+python knn.py Gun/D00204 -r 0.45              # range search: all shapes within distance 0.45
+python knn.py Gun/D00204 -k 5 -sum            # exact kd-tree search for the distance of query.py (slower)
 ```
 
 Shapes are named `Class/file` without the extension. Results are printed, saved as a snapshot in `out/query_examples/` and shown in an interactive viewer (add `-nogui` to skip the viewer).
@@ -75,13 +76,14 @@ The snapshots that the query tools and the t-SNE plot save in `out/` are put bac
 | 3 curvature | `python show_curvature.py [Class/shape ...]`, `python curvature_choice.py` | `out/curvature_examples.png` (meshes coloured by curvature); validation on primitives, the width of the band around the edges of a cube, and the radius / robustness comparison, `out/curvature_choice.csv` |
 | | `python curvature_sign.py` | retrieval with the signed, the unsigned and no curvature histogram, `out/curvature_sign.csv` |
 | 3 volume | `python volume_check.py` | voxel resolution convergence, the ray directions, and 1 to 9 rays compared with a vote over 25 rays (accuracy and time), `out/volume_check.csv` |
+| | `python show_ray_directions.py [Class/shape] [x\|y\|z]` | `out/ray_directions.png`: the golden spiral, the 5 ray directions, and a slice through the voxel grid of a sphere with a hole and of a database shape (default Cup/m526), coloured by how many rays vote inside; prints the angles between the rays |
 | | `python volume_leak.py [-redo]` | leakage of every shape, voxels vs tetrahedra vs convex hull, and retrieval for each leak limit, `out/volume_leak*.csv`, `out/volume_leak.png` (the scan of all shapes takes about an hour) |
 | 4 feature normalisation | `python normalise_features.py` | `out/features_{log,standard,minmax}.csv`, `out/holdout.csv` |
 | | `python normalise_features.py Gun/D00204 [log\|standard\|minmax]` | prints the normalised features of one shape |
 | 4 choosing the distance | `python compare_distances.py`, `python threshold_choice.py` | `out/distance_comparison.*`, `out/threshold_choice.png` |
-| 5 kd-tree check | `python knn.py -check` | agreement with brute force and timings |
-| | `python knn_examples.py` | the six step 4 example queries with the kd-tree: k-nn vs brute force, r-nn counts, `out/knn_examples.csv`, `out/knn_examples.png` |
-| 5 t-SNE | `python tsne.py [-redo] [-nogui] [-brush Class/shape]` | `out/tsne.png` with a legend (one colour and marker per class); hover a point for its name and class, click it to open the shape; `-brush` saves the plot with that shape hovered as `out/tsne_brush.png` |
+| 5 kd-tree check | `python knn.py -check` | for the l2 tree and the exact search for the step 4 distance (`-sum`): agreement with brute force, shapes examined per query, timings against brute force, precision of both distances; `out/knn_check.csv`, and the weight of the globals for the l2 combination in `out/knn_l2_weights.csv` |
+| | `python knn_examples.py` | the six step 4 example queries with the kd-tree: k-nn vs brute force and vs step 4, r-nn counts, `out/knn_examples.csv`, `out/knn_examples.png`, and the range search for the same six queries in `out/knn_range_examples.png` |
+| 5 t-SNE | `python tsne.py [-redo] [-nogui] [-brush Class/shape]` | `out/tsne.png` in a square frame with the same scale on both axes, with a legend (one colour and marker per class); hover a point for its name and class, click it to open the shape; `-brush` saves the plot with that shape hovered as `out/tsne_brush.png` |
 | 6 evaluation | `python evaluate.py [-redo]` | `out/evaluation_*.csv`, `out/evaluation_classes.png` |
 | | `python evaluation_details.py` | prints the other numbers quoted in the report: perfect and empty top-10 shares, duplicates, flagged shapes, what a threshold of 0.35 returns, and which classes are confused with each other |
 

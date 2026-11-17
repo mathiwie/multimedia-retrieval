@@ -78,7 +78,8 @@ def main():
         print("loading", shapes_csv)
         shapes = pd.read_csv(shapes_csv)
     else:
-        engine = Engine()
+        # the exact search for the distance of step 4, so the evaluation measures the system itself
+        engine = Engine(combine="sum")
         print(f"querying every shape for its {k} and class size - 1 nearest neighbours...")
         shapes = evaluate(engine)
         save_stats(shapes, shapes_csv)

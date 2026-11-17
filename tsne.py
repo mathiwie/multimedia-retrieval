@@ -25,7 +25,8 @@ def embed_2d(seed=0):
     # plain distances give heavy tailed affinities and a more spread out map
     xy = TSNE(n_components=2, perplexity=perplexity, metric="precomputed", init="random",
               random_state=seed).fit_transform(matrix ** 2)
-    # the orientation of a tsne map means nothing, so turn its long side horizontal to fill the figure
+    # the orientation of a tsne map means nothing; turning it onto its principal axes is a rotation,
+    # so it changes no distance between the points
     xy -= xy.mean(axis=0)
     xy = xy @ np.linalg.svd(xy, full_matrices=False)[2].T
     points = engine.database[["path", "class"]].assign(x=xy[:, 0], y=xy[:, 1])
@@ -35,7 +36,7 @@ def embed_2d(seed=0):
 
 def plot(points, gui=True, brush=None):
     classes = sorted(points["class"].unique())
-    fig, ax = plt.subplots(figsize=(17, 8.5))
+    fig, ax = plt.subplots(figsize=(15, 10))
     # 69 classes are too many for colours alone, so every class gets its own colour and marker pair
     styles = [(colour, marker) for marker in markers for colour in plt.get_cmap("tab10").colors]
     for cls, (colour, marker) in zip(classes, styles):
@@ -52,7 +53,12 @@ def plot(points, gui=True, brush=None):
     ax.set_title(f"tsne of {len(points)} shapes, {len(classes)} classes")
     ax.set_xticks([])
     ax.set_yticks([])
-    # tsne distances mean the same in x and y, a free aspect would stretch the map sideways
+    # tsne distances mean the same in x and y: the same scale on both axes and a square frame, so that
+    # neither direction looks longer than it is
+    centre = (points[["x", "y"]].max() + points[["x", "y"]].min()) / 2
+    half = 1.04 * (points[["x", "y"]].max() - points[["x", "y"]].min()).max() / 2
+    ax.set_xlim(centre["x"] - half, centre["x"] + half)
+    ax.set_ylim(centre["y"] - half, centre["y"] + half)
     ax.set_aspect("equal")
     plt.tight_layout()
     fname = os.path.join(out_dir, "tsne.png")

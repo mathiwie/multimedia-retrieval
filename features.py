@@ -185,25 +185,35 @@ def closed_mesh_volume(mesh):
     a, b, c = verts[tris[:, 0]], verts[tris[:, 1]], verts[tris[:, 2]]
     return abs(np.einsum("ij,ij->i", a, np.cross(b, c)).sum() / 6)
 
+def golden_spiral(n):
+    # n directions spread evenly over the sphere: the heights z go down in equal steps, which gives every
+    # direction a band of the sphere with the same area, and every next direction is turned by the
+    # golden angle (137.5 degrees) around the z axis, so that no two of them line up
+    i = np.arange(n) + 0.5
+    z = 1 - 2 * i / n
+    phi = i * np.pi * (3 - np.sqrt(5))
+    return np.stack([np.sqrt(1 - z ** 2) * np.cos(phi), np.sqrt(1 - z ** 2) * np.sin(phi), z], axis=1)
+
 def ray_directions(rays=volume_rays):
     # golden spiral: the directions are spread as evenly as possible over the sphere, so one hole
     # is unlikely to fool several rays at once; the fixed random rotation makes sure that no ray is
     # parallel to a coordinate axis, along which the faces of aligned shapes and the voxel grid lie
-    i = np.arange(rays) + 0.5
-    z = 1 - 2 * i / rays
-    phi = i * np.pi * (3 - np.sqrt(5))
-    d = np.stack([np.sqrt(1 - z ** 2) * np.cos(phi), np.sqrt(1 - z ** 2) * np.sin(phi), z], axis=1)
     rotation, _ = np.linalg.qr(np.random.default_rng(seed).normal(size=(3, 3)))
-    return d @ rotation.T
+    return golden_spiral(rays) @ rotation.T
 
-def voxel_votes(mesh, res=volume_res, rays=volume_rays):
-    scene = o3d.t.geometry.RaycastingScene()
-    scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(mesh))
+def voxel_grid(mesh, res=volume_res):
+    # the centres of cubes with side extent / res over the bounding box, x slowest and z fastest
     verts = np.asarray(mesh.vertices)
     lo, hi = verts.min(axis=0), verts.max(axis=0)
     step = (hi - lo).max() / res
     axes = [np.arange(lo[i] + step / 2, hi[i] + step / 2, step) for i in range(3)]
     points = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3).astype(np.float32)
+    return axes, points, step
+
+def voxel_votes(mesh, res=volume_res, rays=volume_rays):
+    scene = o3d.t.geometry.RaycastingScene()
+    scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(mesh))
+    _, points, step = voxel_grid(mesh, res)
     votes = np.zeros((rays, len(points)), dtype=bool)
     for i, d in enumerate(ray_directions(rays)):
         cast = np.hstack([points, np.broadcast_to(d.astype(np.float32), points.shape)])

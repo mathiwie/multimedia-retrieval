@@ -105,12 +105,13 @@ presets = [
       "4 of the 5 matches are tables; other files can be picked in the Query panel"]),
     ("7", "Step 5", "kd-tree, K = 5: Car/D00260 (held out)",
      ["knn.py", "Car/D00260", "-k", "5"],
-     ["K is set by the user; exactly the results and distances of the brute-force search",
+     ["K is set by the user; one exact tree query for the l2 combination of the blocks, ~10x faster than brute force",
+      "the same 5 shapes as the brute-force search of step 4, with #2 and #3 swapped",
       "cars and military vehicles: shapes with the same proportions"]),
-    ("8", "Step 5", "kd-tree, range r = 0.24: Humanoid/m198",
-     ["knn.py", "Humanoid/m198", "-r", "0.24"],
-     ["every shape within distance r: 14 shapes, 7 of them humanoids",
-      "r = 0.3 returns 60 and r = 0.4 returns 245 shapes, which is why a fixed K is the default"]),
+    ("8", "Step 5", "kd-tree, range r = 0.28: Humanoid/m198",
+     ["knn.py", "Humanoid/m198", "-r", "0.28"],
+     ["every shape within distance r: 16 shapes, 8 of them humanoids",
+      "r = 0.35 returns 85 and r = 0.45 returns 299 shapes, which is why a fixed K is the default"]),
     ("9", "Step 5", "t-SNE map of the database",
      ["tsne.py"],
      ["colour and marker = class; hover: name and class, black rings mark the whole class",
@@ -347,6 +348,9 @@ class App:
         else:
             target = label = f"{self.class_box.get()}/{self.shape_box.get().split(' ')[0]}"
         kdtree = self.search.get() == "kdtree"
+        if kdtree:
+            notes.append("the kd-tree combines the blocks as an l2 distance (step 5), so its distances are a "
+                         "little larger than those of the brute-force search")
         try:
             if self.limit.get() == "k":
                 k, distance = int(self.k.get()), None
