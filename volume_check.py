@@ -23,15 +23,18 @@ def main():
     for path, cls in picked:
         mesh = o3d.io.read_triangle_mesh(path)
         hull, _ = mesh.compute_convex_hull()
-        row = {"path": path, "class": cls, "hull_volume": ft.closed_mesh_volume(hull),
+        row = {"path": path, "class": cls,
+               "hull_volume": ft.closed_mesh_volume(hull),
                "watertight": mesh.is_watertight()}
         for res in resolutions:
             start = time.perf_counter()
-            row[f"volume_{res}"], row[f"leakage_{res}"] = ft.mesh_volume(mesh, res)
+            row[f"volume_{res}"], row[f"leakage_{res}"
+                                      ] = ft.mesh_volume(mesh, res)
             row[f"seconds_{res}"] = time.perf_counter() - start
         for rays in ray_counts + [reference_rays]:
             start = time.perf_counter()
-            row[f"volume_rays{rays}"], _ = ft.mesh_volume(mesh, ft.volume_res, rays)
+            row[f"volume_rays{rays}"], _ = ft.mesh_volume(
+                mesh, ft.volume_res, rays)
             row[f"seconds_rays{rays}"] = time.perf_counter() - start
         start = time.perf_counter()
         ft.global_features(mesh)
@@ -41,7 +44,8 @@ def main():
     save_stats(data, check_csv)
 
     finest = data[f"volume_{resolutions[-1]}"]
-    print(f"{shapes_used} random shapes, {data['watertight'].sum()} of them watertight")
+    print(f"{shapes_used} random shapes, {data['watertight'].sum()} of",
+          "them watertight")
     print(f"\n{'grid':>6s}  {'median |V - V_256| / V_256':>27s}  {'90th pct':>9s}  {'s per shape':>11s}")
     for res in resolutions:
         rel = (data[f"volume_{res}"] - finest).abs() / finest
@@ -50,7 +54,7 @@ def main():
     directions = ft.ray_directions(ft.volume_rays)
     angles = np.degrees(np.arccos(np.clip(directions @ directions.T, -1, 1)))
     np.fill_diagonal(angles, 360)
-    print(f"\nthe {ft.volume_rays} ray directions (golden spiral, fixed random rotation):")
+    print(f"\nthe {ft.volume_rays} ray direction:")
     print(np.round(directions, 3))
     print(f"  smallest angle between two directions {angles.min():.1f} degrees, "
           f"smallest angle to a coordinate axis {np.degrees(np.arccos(np.abs(directions).max(axis=1))).min():.1f} degrees")

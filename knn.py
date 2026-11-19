@@ -19,10 +19,6 @@ weights_csv = os.path.join(out_dir, "knn_l2_weights.csv")
 
 
 class Engine:
-    # combine = "l2": the blocks are scaled so that the euclidean distance of the tree is exactly the
-    #   weighted root mean square of the block distances, one tree query gives the exact answer
-    # combine = "sum": exact search for the distance of step 4 (weighted mean of the block distances),
-    #   for which the euclidean distance of the tree is only a lower bound
     def __init__(self, normalisation=qr.normalisation, globals_weight=qr.globals_weight, combine="l2"):
         if qr.histogram_metric != "euclidean":
             raise ValueError("kd-tree only works with euclidean histograms")
@@ -39,7 +35,7 @@ class Engine:
         sizes = [len(ds.block_columns(self.table, name)) for name in ds.blocks]
         self.cuts = np.cumsum(sizes)[:-1]
         self.vectors = self.embed(self.table)
-        self.examined = 0   # shapes whose exact distance the last search computed
+        self.examined = 0
         start = time.perf_counter()
         self.tree = cKDTree(self.vectors)
         print(f"kd-tree ({combine}): {len(self.vectors)} shapes, {self.vectors.shape[1]} dims, "
@@ -48,7 +44,7 @@ class Engine:
     def embed(self, table):
         total = sum(self.weights.values())
         if self.combine == "l2":
-            # the tree squares every coordinate difference, so block k is scaled by sqrt(w_k)
+            # the tree squares every coordinate difference so block k is scaled by sqrt(w_k)
             factors = {name: np.sqrt(self.weights[name] / total) / self.scales[name] for name in ds.blocks}
         else:
             factors = {name: self.weights[name] / (self.scales[name] * total) for name in ds.blocks}
@@ -140,9 +136,8 @@ def check(k=10):
         engine = Engine(combine=combine)
         n = len(engine.vectors)
         queries = range(n)
-        everyone = slice(None)   # a slice, so brute force does not copy the vectors for every query
+        everyone = slice(None)
         labels = engine.database["class"].to_numpy()
-        # brute force with distance.py, computed from the blocks and not from the vectors of the tree
         brute = ds.distances_to(engine.table, engine.table, engine.scales, engine.weights, combine=combine)
         gap = max(np.abs(engine.exact(engine.vectors[i], everyone) - brute[i]).max() for i in queries)
         print(f"{combine}: largest difference with distance.py {gap:.1e}")
@@ -154,7 +149,7 @@ def check(k=10):
             examined.append(engine.examined)
             truth = np.argpartition(brute[i], k)[:k]
             recall.append(len(set(found) & set(truth)) / k)
-            # a shape at exactly the distance of the true k-th neighbour is an equally good answer
+            # a shape at exactly the distance of the true kth neighbour is an equally good answer!!
             tied.append(np.mean(brute[i, found] <= brute[i, truth].max() + 1e-12))
 
         def by_tree(i):
@@ -180,7 +175,7 @@ def check(k=10):
                "r_precision": r_precision(brute, labels)}
 
         if combine == "l2":
-            # the fastest brute force we found: all squared distances as one matrix-vector product
+            # the fastest brute force we found - all squared distances as one matrix-vector product
             squares = (engine.vectors ** 2).sum(axis=1)
             row["brute force ms (matrix-vector)"] = timed(
                 lambda i: np.argpartition(squares - 2 * engine.vectors @ engine.vectors[i], k + 1)[:k + 1], queries)
@@ -197,7 +192,7 @@ def check(k=10):
     print(f"\nevery database shape as query, {k} nearest neighbours")
     print(table.round(4).T.to_string(header=False))
 
-    # the weight of the globals for the l2 combination, chosen on the tune half as in step 4
+    # the weight of the globals for the l2 combination chosen on the tune half as in step 4
     labels = engine.database["class"].to_numpy()
     tune = cd.tune_mask(labels)
     sweep = []

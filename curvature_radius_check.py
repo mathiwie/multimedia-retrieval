@@ -11,7 +11,8 @@ import query as qr
 from compare_distances import feature_scores
 from preprocessing import out_dir, save_stats
 
-# the curvature histogram at another patch radius, for every shape, and retrieval with each radius
+# the curvature histogram at another patch radius, for every shape, and
+# retrieval with each radius
 other_radius = 0.08
 other_csv = os.path.join(out_dir, f"curvature_r{other_radius}.csv")
 results_csv = os.path.join(out_dir, "curvature_radius_check.csv")

@@ -20,8 +20,8 @@ def counts(mesh):
 
 
 def clean_steps(path, cls):
-    # "file" is the mesh exactly as stored; open3d's reader ("loaded") already merges vertices with the
-    # same position (and normal) and drops vertices that no face uses
+    # "file" is the mesh exactly as stored
+    # same position and drops vertices that no face uses
     verts, tris, _ = read_obj(path)
     stored = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(verts), o3d.utility.Vector3iVector(tris))
     row = {"path": path.replace("\\", "/"), "class": cls}

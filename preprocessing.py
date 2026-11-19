@@ -21,11 +21,8 @@ target_verts = 7500
 target_min = 5000
 target_max = 10000
 
+
 def read_obj(path):
-    # the mesh exactly as stored in an OBJ file: every vertex line is a vertex and every face line a face
-    # (polygons are split into a fan of triangles). open3d's reader is different: it merges vertices
-    # with the same position (and normal) and drops vertices that no face uses, which removes about
-    # 1.45 million of the 13.9 million vertices of the database, so we count vertices here instead
     verts, tris, sizes = [], [], Counter()
     with open(path, "r", errors="ignore") as f:
         for line in f:
@@ -41,6 +38,7 @@ def read_obj(path):
                 tris.extend([index[0], index[k], index[k + 1]] for k in range(1, len(index) - 1))
     return (np.array(verts, dtype=float).reshape(-1, 3), np.array(tris, dtype=np.int64).reshape(-1, 3), sizes)
 
+
 def face_type_of(sizes):
     if not sizes:
         return "none"
@@ -50,10 +48,12 @@ def face_type_of(sizes):
         return "quads"
     return "mixed"
 
+
 def file_counts(path):
     # number of vertices and faces stored in the file
     verts, _, sizes = read_obj(path)
     return len(verts), sum(sizes.values())
+
 
 def analyze_shape(path, shape_class):
     verts, _, sizes = read_obj(path)
@@ -79,6 +79,7 @@ def analyze_shape(path, shape_class):
         "max_x": bbox_max[0], "max_y": bbox_max[1], "max_z": bbox_max[2],
     }
 
+
 def walk_shapes(root):
     for class_name in sorted(os.listdir(root)):
         class_folder = os.path.join(root, class_name)
@@ -87,6 +88,7 @@ def walk_shapes(root):
         objs = sorted(glob.glob(os.path.join(class_folder, "**", "*.obj"), recursive=True))
         for obj_path in objs:
             yield obj_path, class_name
+
 
 def make_stats_df(root):
     data = []
@@ -97,10 +99,12 @@ def make_stats_df(root):
             print("couldnt read:", path, "-", e)
     return pd.DataFrame(data)
 
+
 def save_stats(df, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     df.to_csv(path, index=False)
     print(f"saved {len(df)} rows to {path}")
+
 
 def make_histograms(df, label=""):
     os.makedirs(out_dir, exist_ok=True)
@@ -119,6 +123,7 @@ def make_histograms(df, label=""):
     plt.close(fig)
     print("saved histogram to", fname)
 
+
 def make_class_histogram(df, label=""):
     os.makedirs(out_dir, exist_ok=True)
     counts = df["class"].value_counts().sort_values()
@@ -135,6 +140,7 @@ def make_class_histogram(df, label=""):
     plt.close(fig)
     print("saved class histogram to", fname)
 
+
 def print_stats_summary(df):
     print("\nsummary (vertices and faces as stored in the files)")
     print("num shapes:", len(df))
@@ -146,7 +152,7 @@ def print_stats_summary(df):
           "-", df["num_verts"].max(), "verts")
     merged = df["num_verts"] - df["loaded_verts"]
     print(f"open3d merges or drops {merged.sum():,} vertices on loading, in {(merged > 0).sum()} shapes")
-    print("----------------\n")
+
 
 def find_average_and_outliers(df, n=3, lo=small_thresh, hi=big_thresh):
     dv = (df["num_verts"] - df["num_verts"].mean()) / df["num_verts"].std()
@@ -165,6 +171,7 @@ def find_average_and_outliers(df, n=3, lo=small_thresh, hi=big_thresh):
     print(f"big outliers (>{hi} verts or faces): {len(big)}")
     return picked
 
+
 def remove_reversed_triangles(mesh):
     # open3d's remove_duplicated_triangles only removes copies with the same winding,
     # so a triangle stored once per side, (i, j, k) and (i, k, j), survives it
@@ -178,6 +185,7 @@ def remove_reversed_triangles(mesh):
         mesh.remove_triangles_by_mask(drop)
     return mesh
 
+
 def clean_mesh(mesh):
     if num_verts(mesh) > 0:
         extent = np.max(mesh.get_max_bound() - mesh.get_min_bound())
@@ -189,8 +197,10 @@ def clean_mesh(mesh):
     mesh.remove_unreferenced_vertices()
     return mesh
 
+
 def num_verts(mesh):
     return np.asarray(mesh.vertices).shape[0]
+
 
 def search_in_range(simplify, p_min, p_max, target=target_verts, lo=target_min, hi=target_max, iters=12):
     best = None
@@ -221,10 +231,12 @@ def simplify_mesh(mesh, target=target_verts, lo=target_min, hi=target_max):
     cluster = lambda divisions: mesh.simplify_vertex_clustering(voxel_size=extent / divisions)
     return search_in_range(cluster, 10, 1000, target, lo, hi)
 
+
 def mesh_edges(tris):
     ends = np.sort(tris[:, [[0, 1], [1, 2], [2, 0]]], axis=2).reshape(-1, 2)
     keys, edge_id = np.unique(ends, axis=0, return_inverse=True)
     return keys, edge_id.reshape(-1, 3)
+
 
 def split_edges(verts, tris, keys, edge_id, marked):
     while True:
@@ -270,6 +282,7 @@ def split_largest(mesh, budget):
     marked[edge_id[chosen].ravel()] = True
     return split_edges(verts, tris, keys, edge_id, marked)
 
+
 def split_long_edges(mesh, max_length, rounds=20):
     for _ in range(rounds):
         verts = np.asarray(mesh.vertices)
@@ -281,6 +294,7 @@ def split_long_edges(mesh, max_length, rounds=20):
         mesh = split_edges(verts, tris, keys, edge_id, marked)
     return mesh
 
+
 def refine_mesh(mesh, target=target_verts, lo=target_min, hi=target_max, rounds=30):
     count = 0
     while num_verts(mesh) < lo and count < rounds:
@@ -290,13 +304,13 @@ def refine_mesh(mesh, target=target_verts, lo=target_min, hi=target_max, rounds=
         mesh = simplify_mesh(mesh, target, lo, hi)
     return mesh
 
+
 def fix_outliers(df, root, dest, lo=target_min, hi=target_max):
     os.makedirs(dest, exist_ok=True)
     for _, row in df.iterrows():
         path = row["path"]
         cls = row["class"]
         try:
-            # the decisions below use the mesh as loaded and cleaned, not the counts in the file
             mesh = clean_mesh(o3d.io.read_triangle_mesh(path))
             if num_verts(mesh) == 0:
                 print(f"skipping {path} (empty mesh, 0 verts)")
@@ -318,6 +332,7 @@ def fix_outliers(df, root, dest, lo=target_min, hi=target_max):
             print("couldnt resample:", path, "-", e)
     print("done resampling:", dest)
 
+
 def area_weighted_covariance(mesh):
     verts = np.asarray(mesh.vertices)
     tris = np.asarray(mesh.triangles)
@@ -331,14 +346,15 @@ def area_weighted_covariance(mesh):
     offsets = centroids - (weights[:, None] * centroids).sum(axis=0)
     return np.einsum("i,ij,ik->jk", weights, offsets, offsets)
 
+
 def principal_axes(mesh):
     eigenvalues, eigenvectors = np.linalg.eigh(area_weighted_covariance(mesh))
     order = np.argsort(eigenvalues)[::-1]
     return eigenvalues[order], eigenvectors[:, order]
 
+
 def area_barycenter(mesh):
-    # centre of mass of the surface as a thin shell: face centroids weighted by face area,
-    # so it does not depend on how the vertices are spread over the surface
+    # so it does not depend on how the vertices are spread over the surface (feedback fix)
     verts = np.asarray(mesh.vertices)
     tris = np.asarray(mesh.triangles)
     if len(tris) == 0:
@@ -349,11 +365,13 @@ def area_barycenter(mesh):
         return verts.mean(axis=0)
     return (areas[:, None] * (a + b + c) / 3).sum(axis=0) / areas.sum()
 
+
 def flip_moments(mesh):
     verts = np.asarray(mesh.vertices)
     tris = np.asarray(mesh.triangles)
     centroids = verts[tris].mean(axis=1)
     return np.sum(np.sign(centroids) * centroids ** 2, axis=0)
+
 
 def normalisation_steps(mesh):
     steps = [("original", o3d.geometry.TriangleMesh(mesh))]
@@ -385,6 +403,7 @@ def normalisation_steps(mesh):
 
 def normalise_mesh(mesh):
     return normalisation_steps(mesh)[-1][1]
+
 
 def normalise_all(root, dest):
     os.makedirs(dest, exist_ok=True)
@@ -443,6 +462,7 @@ def check_normalisation(root, csv_path=normalisation_csv):
     save_stats(df, csv_path)
     return df
 
+
 def make_normalisation_histograms(before, after):
     fig, ax = plt.subplots(2, 3, figsize=(17, 9))
     ax = ax.ravel()
@@ -479,6 +499,7 @@ def make_normalisation_histograms(before, after):
     plt.savefig(fname, dpi=150)
     plt.close(fig)
     print("saved histogram to", fname)
+
 
 if __name__ == "__main__":
     import sys

@@ -19,7 +19,8 @@ def histograms(values, name, b):
 
 def main():
     random.seed(0)
-    paths = random.sample([p for p, _ in walk_shapes(normalised_dir)], shapes_used)
+    paths = random.sample([p for p, _ in walk_shapes(normalised_dir)],
+                          shapes_used)
     runs = []
     for path in paths:
         mesh = o3d.io.read_triangle_mesh(path)
@@ -35,7 +36,8 @@ def main():
         for b in candidates:
             hists = [[histograms(run[name], name, b) for run in shape] for shape in runs]
             noise.append(np.mean([np.abs(a - c).sum() for a, c in hists]))
-            pairs = [(i, j) for i in range(len(hists)) for j in range(i + 1, len(hists))]
+            pairs = [(i, j) for i in range(len(hists)) for j in range(i + 1,
+                                                                      len(hists))]
             signal.append(np.mean([np.abs(hists[i][0] - hists[j][0]).sum() for i, j in pairs]))
         noise, signal = np.array(noise), np.array(signal)
         print(f"\n{name}   B:  " + "  ".join(f"{b:>6d}" for b in candidates))

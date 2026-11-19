@@ -11,10 +11,12 @@ default_shapes = ["Biplane/m1120", "Humanoid/m198", "Gun/D00204", "Bird/m43",
                   "Vase/m541", "Door/m1708", "Skyscraper/D00058"]
 shapes = sys.argv[1:] if len(sys.argv) > 1 else default_shapes
 
+
 def axes_at(origin, length=0.5):
     frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=length)
     frame.translate(origin)
     return frame
+
 
 def unit_cube_at(origin):
     cube = o3d.geometry.LineSet.create_from_axis_aligned_bounding_box(
@@ -22,6 +24,7 @@ def unit_cube_at(origin):
     cube.paint_uniform_color((0.6, 0.6, 0.6))
     cube.translate(origin)
     return cube
+
 
 for key in shapes:
     before = o3d.io.read_triangle_mesh(os.path.join(repo_dir, resampled_dir, key + ".obj"))

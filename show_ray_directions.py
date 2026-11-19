@@ -10,15 +10,14 @@ import features as ft
 from preprocessing import out_dir, normalised_dir
 
 spiral_points = 200
-hole_angle = 70   # narrower than the smallest angle between two rays, so from the centre at most one ray escapes
-# white = no ray says inside, orange = outside by majority, blue = inside by majority, dark = all rays agree
+hole_angle = 70
+# used gemini
 vote_colours = ["white", "#fdd0a2", "#fd8d3c", "#9ecae1", "#4292c6", "#08306b"]
 
 
 def angles(directions):
     between = np.degrees(np.arccos(np.clip(directions @ directions.T, -1, 1)))
     np.fill_diagonal(between, np.inf)
-    # how far an arbitrary direction can be from the nearest ray, from many random directions
     random = np.random.default_rng(ft.seed).normal(size=(400_000, 3))
     random /= np.linalg.norm(random, axis=1, keepdims=True)
     nearest = np.degrees(np.arccos(np.clip((random @ directions.T).max(axis=1), -1, 1)))
@@ -40,7 +39,6 @@ def sphere(ax):
 
 
 def section(mesh, axis, level):
-    # the line segments where the plane coordinate[axis] = level cuts the triangles of the mesh
     corners = np.asarray(mesh.vertices)[np.asarray(mesh.triangles)]
     side = corners[:, :, axis] - level
     cut = (side.min(axis=1) < 0) & (side.max(axis=1) > 0)
@@ -55,7 +53,8 @@ def section(mesh, axis, level):
 
 
 def open_sphere(hole=hole_angle):
-    # a sphere with diameter 1 without a cap at the top, seen from the centre the hole is a cone of hole degrees
+    # a sphere with diameter 1 without a cap at the top,
+    # seen from the centre the hole is a cone of hole degrees
     mesh = o3d.geometry.TriangleMesh.create_sphere(0.5, 80)
     verts = np.asarray(mesh.vertices)
     tris = np.asarray(mesh.triangles)
@@ -68,7 +67,7 @@ def vote_slice(ax, mesh, name, axis):
     grid, _, step = ft.voxel_grid(mesh)
     votes, _ = ft.voxel_votes(mesh)
     count = votes.sum(axis=0).reshape([len(a) for a in grid])
-    layer = int(np.argmin(np.abs(grid[axis])))   # the layer through the barycenter
+    layer = int(np.argmin(np.abs(grid[axis])))
     plane = np.take(count, layer, axis=axis)
     other = [i for i in range(3) if i != axis]
     extent = [grid[other[0]][0] - step / 2, grid[other[0]][-1] + step / 2,
@@ -133,5 +132,4 @@ def main(key, axis):
 
 if __name__ == "__main__":
     argv = sys.argv[1:]
-    # a cup whose opening is seen from close by under a wide angle, so that several rays escape at once
     main(argv[0] if argv else "Cup/m526", "xyz".index(argv[1]) if len(argv) > 1 else 2)

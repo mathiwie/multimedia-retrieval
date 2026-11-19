@@ -1,8 +1,9 @@
-"""Demo window: every step of the assignment one click away, plus a panel to run any query.
-
+"""
     python demo.py          opens the demo window
     python demo.py 4        runs preset 4 in the terminal, without the window
     python demo.py list     lists the presets
+
+We did get help from gemini to make this demo but the design is our own.
 
 The buttons run the normal scripts (main.py, query.py, knn.py, tsne.py, ...) and show what they
 print in the window. query.py, knn.py and tsne.py save a snapshot in out/ every time they run;
@@ -55,6 +56,7 @@ def show_features(name, out=print):
 
 
 def sparkline(values):
+    # used gemini for this
     bars = "▁▂▃▄▅▆▇█"
     top = values.max() if values.max() > 0 else 1.0
     return "".join(" " if v <= 0 else bars[min(len(bars) - 1, int(v / top * len(bars)))] for v in values)
@@ -78,7 +80,6 @@ def show_evaluation(out=print):
             out(f"    {row['class']:23s} {int(row['size']):4d}  {row['r_precision']:7.3f}  {row['precision@10']:7.3f}")
 
 
-# key, step, title, what to run (script and arguments, or a function), talking points
 presets = [
     ("1", "Step 1", "Viewer: Car/D00236 as stored",
      ["main.py", os.path.join("ShapeDatabase_INFOMR", "Car", "D00236.obj")],

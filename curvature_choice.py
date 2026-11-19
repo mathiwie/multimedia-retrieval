@@ -88,7 +88,7 @@ def validate(radius):
 
 def cube_band(radius, samples=4000):
     # every point closer than the radius to an edge of a cube sees part of the next face, so the
-    # estimate spreads the curvature of the edges over a band; for a unit cube that band covers a
+    # estimate spreads the curvature of the edges over a band - for a unit cube that band covers a
     # share 1 - (1 - 2 r)^2 of the surface
     cube = o3d.geometry.TriangleMesh.create_box().subdivide_midpoint(4)
     cube.translate(-cube.get_center())

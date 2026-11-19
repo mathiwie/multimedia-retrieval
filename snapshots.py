@@ -2,18 +2,22 @@ import numpy as np
 import open3d as o3d
 import matplotlib.pyplot as plt
 
-fixed_view = {"front": (0.45, -0.75, 0.5), "lookat": (0.0, 0.0, 0.0), "up": (0.0, 0.0, 1.0), "zoom": 0.6}
+fixed_view = {"front": (0.45, -0.75, 0.5
+                        ), "lookat": (0.0, 0.0, 0.0), "up": (0.0, 0.0, 1.0
+                                                             ), "zoom": 0.6}
 
 
 def angled(mesh, zoom=0.75):
-    return {**fixed_view, "lookat": tuple(mesh.get_axis_aligned_bounding_box().get_center()), "zoom": zoom}
+    return {**fixed_view, "lookat": tuple(
+        mesh.get_axis_aligned_bounding_box().get_center()), "zoom": zoom}
 
 
 def crop(image, pad=10):
     rows, cols = np.nonzero((image < 0.99).any(axis=2))
     if len(rows) == 0:
         return image
-    return image[max(rows.min() - pad, 0):rows.max() + pad, max(cols.min() - pad, 0):cols.max() + pad]
+    return image[max(rows.min() - pad, 0):rows.max() + pad,
+                 max(cols.min() - pad, 0):cols.max() + pad]
 
 
 def crop_common(images, pad=10):
@@ -23,7 +27,8 @@ def crop_common(images, pad=10):
     rows, cols = np.nonzero(mask)
     if len(rows) == 0:
         return images
-    window = (slice(max(rows.min() - pad, 0), rows.max() + pad), slice(max(cols.min() - pad, 0), cols.max() + pad))
+    window = (slice(max(rows.min() - pad, 0), rows.max() + pad),
+              slice(max(cols.min() - pad, 0), cols.max() + pad))
     return [image[window] for image in images]
 
 
@@ -58,7 +63,8 @@ def render(geometries, size=500, view=None, wireframe=False, tight=True):
 
 
 def shaded(path_or_mesh, color=None):
-    mesh = o3d.io.read_triangle_mesh(path_or_mesh) if isinstance(path_or_mesh, str) else path_or_mesh
+    mesh = o3d.io.read_triangle_mesh(path_or_mesh) if isinstance(
+        path_or_mesh, str) else path_or_mesh
     mesh.compute_vertex_normals()
     if color is not None:
         mesh.paint_uniform_color(color)
@@ -68,14 +74,18 @@ def shaded(path_or_mesh, color=None):
 def axes_and_cube(size=0.5):
     frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=size)
     cube = o3d.geometry.LineSet.create_from_axis_aligned_bounding_box(
-        o3d.geometry.AxisAlignedBoundingBox((-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)))
+        o3d.geometry.AxisAlignedBoundingBox((-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)
+                                            ))
     cube.paint_uniform_color((0.6, 0.6, 0.6))
     return [frame, cube]
 
 
-def save_grid(images, captions, fname, columns, cell=(2.6, 2.6), row_labels=None, fontsize=8, title=None):
+def save_grid(images, captions, fname, columns, cell=(2.6, 2.6),
+              row_labels=None, fontsize=8, title=None):
     rows = -(-len(images) // columns)
-    fig, ax = plt.subplots(rows, columns, figsize=(cell[0] * columns, cell[1] * rows), squeeze=False)
+    fig, ax = plt.subplots(rows, columns, figsize=(cell[0] * columns,
+                                                   cell[1] * rows
+                                                   ), squeeze=False)
     for a in ax.ravel():
         a.axis("off")
     for i, (image, caption) in enumerate(zip(images, captions)):
@@ -84,7 +94,8 @@ def save_grid(images, captions, fname, columns, cell=(2.6, 2.6), row_labels=None
         a.set_title(caption, fontsize=fontsize)
     if row_labels:
         for r, label in enumerate(row_labels):
-            ax[r, 0].text(-0.08, 0.5, label, transform=ax[r, 0].transAxes, rotation=90,
+            ax[r, 0].text(-0.08, 0.5, label, transform=ax[r, 0].transAxes,
+                          rotation=90,
                           ha="right", va="center", fontsize=fontsize + 1)
     if title:
         fig.suptitle(title, fontsize=fontsize + 2)

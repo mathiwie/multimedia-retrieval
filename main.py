@@ -7,7 +7,8 @@ repo_dir = os.path.dirname(os.path.abspath(__file__))
 if len(sys.argv) > 1:
     mesh_path = sys.argv[1]
 else:
-    mesh_path = os.path.join(repo_dir, "ShapeDatabase_INFOMR", "AquaticAnimal", "m59.obj")
+    mesh_path = os.path.join(repo_dir, "ShapeDatabase_INFOMR", "AquaticAnimal",
+                             "m59.obj")
 
 if not os.path.isfile(mesh_path):
     sys.exit(f"mesh not found: {mesh_path}")

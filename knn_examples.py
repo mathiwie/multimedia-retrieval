@@ -10,12 +10,10 @@ from knn import Engine
 from preprocessing import out_dir, save_stats
 from snapshots import render
 
-# the six queries of the step 4 examples (figure 18), the last one as a mesh file from outside the database
+
 queries = ["Gun/D00204", "Humanoid/m198", "Car/D00260", "Bicycle/D00974", "Vase/m541",
            os.path.join("ShapeDatabase_INFOMR", "RoundTable", "m935.obj")]
 k = 5
-# the l2 combination is never smaller than the distance of step 4, and r = 0.45 gives the median query
-# about as many results (38) as r = 0.4 did with that distance (37)
 radius = 0.45
 examples_csv = os.path.join(out_dir, "knn_examples.csv")
 

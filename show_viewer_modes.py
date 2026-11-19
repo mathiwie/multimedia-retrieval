@@ -31,7 +31,6 @@ def window(mesh, steps=(), size=700, wireframe=True):
 
 
 def counted(key):
-    # vertices and faces as stored in the file (open3d merges duplicated vertices when it loads one)
     vertices, faces = file_counts(os.path.join(db_path, key + ".obj"))
     return f"{vertices:,} v / {faces:,} f"
 
@@ -43,8 +42,7 @@ def describe(name, mesh):
 
 
 def pick_variety():
-    # the extremes of the database statistics: smallest mesh, smallest extent, average shape,
-    # most vertices, most faces and the shape that lies furthest from the origin
+    # the extremes of the database
     stats = pd.read_csv(stats_csv)
     stats.index = stats["class"] + "/" + stats["path"].map(lambda p: os.path.splitext(os.path.basename(p.replace("\\", "/")))[0])
     low = stats[["min_x", "min_y", "min_z"]].to_numpy()

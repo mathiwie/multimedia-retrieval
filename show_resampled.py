@@ -11,16 +11,18 @@ repo_dir = os.path.dirname(os.path.abspath(__file__))
 check_csv = os.path.join(out_dir, "resampling_check.csv")
 n = 3
 
-# the shapes that quadric decimation could not bring below 10,000 vertices (see the output of preprocessing.py)
+# the shapes that quadric decimation could not bring below 10,000 vertices (output of preprocessing.py)
 clustered = ["House/D00286", "House/D00901"]
 figure_shapes = [("refined", "AircraftBuoyant/m1337"), ("refined", "Vase/m541"),
                  ("simplified", "Biplane/m1120"), ("simplified", "PlantIndoors/D00080"),
                  ("vertex clustering", "House/D00286"), ("vertex clustering", "House/D00901")]
 
+
 def load_stats(path):
     df = pd.read_csv(os.path.join(repo_dir, path))
     df["key"] = df["class"] + "/" + df["path"].map(lambda p: os.path.splitext(os.path.basename(p))[0])
     return df.set_index("key")[["class", "num_verts", "num_faces"]]
+
 
 for path in [stats_csv, stats_csv_after]:
     if not os.path.isfile(os.path.join(repo_dir, path)):
@@ -40,6 +42,7 @@ else:
     ])
     save_stats(picked.reset_index(), os.path.join(repo_dir, check_csv))
 
+
 def load_for_display(path, offset):
     mesh = o3d.io.read_triangle_mesh(path)
     mesh.compute_vertex_normals()
@@ -49,6 +52,7 @@ def load_for_display(path, offset):
         mesh.scale(1.0 / size, center=(0, 0, 0))
     mesh.translate((offset, 0, 0))
     return mesh
+
 
 def save_figure(stats):
     images, captions = [], []
